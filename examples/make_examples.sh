@@ -9,14 +9,14 @@ if [[ "$#" -ge 1 ]] ; then
     if [[ $build_arg == "y" ]] || [[ $build_arg == "yes" ]] ; then
         echo "** Building package";
         cd ..;
-        mvn package;
+        mvn package -Dmaven.test.skip=true ;
         cd examples;
         echo "** Package built";
     fi
 fi
 
-# one of "trace" "debug" "info" "warn" "warn" "error" "off"
-LOG_LEVEL="warn";
+# one of "trace" "debug" "info" "warn" "error" "off"
+LOG_LEVEL="debug";
 # build holds .class files of examplaes
 BUILD_DIR=`realpath "build/"`;
 # holds source of examples

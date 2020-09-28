@@ -1,5 +1,8 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks;
 
+import soot.Body;
+import soot.Modifier;
+import soot.NullType;
 import soot.Pack;
 import soot.PackManager;
 import soot.Printer;
@@ -8,7 +11,9 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.SourceLocator;
 import soot.Transform;
+import soot.VoidType;
 import soot.jimple.JasminClass;
+import soot.jimple.Jimple;
 import soot.options.Options;
 import soot.util.JasminOutputStream;
 
@@ -19,11 +24,15 @@ import java.io.PrintWriter;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentExtractor;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
 
 /**
  * Based on edu.utexas.cs.utopia.cfpchecker.Driver by kferles
@@ -132,87 +141,50 @@ public class Driver
         Instant start = Instant.now();
         
         // Adding our transformers!
-        Pack jtpPack = packManager.getPack("jtp");
-        
+        Pack jtpPack = packManager.getPack("jtp");     
         log.debug("Adding custom soot transforms");
-        AtomicSegmentExtractor atomicExtractor = new AtomicSegmentExtractor();
-        Transform atomicExtractorT = new Transform("jtp.ase", atomicExtractor);
+   
+        // Used to get the atomic segments
+        AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker();
+        Transform atomicExtractorT = new Transform("jtp.atomicSegmentMarker",
+        										   atomicExtractor);
         jtpPack.add(atomicExtractorT);
         
         log.info("Applying custom transforms");
-        // Extract atomic segments from all application methods
         for(String className : cmdLine.getTargetClasses()) {
         	SootClass targetClass = Scene.v().getSootClass(className);
+        	
+        	// Clear previous atomic segments
+        	atomicExtractor.getAtomicSegments().clear();
+        	
+        	// make sure targetClass has a clinit method
+        	// https://ptolemy.berkeley.edu/ptolemyII/ptII10.0/ptII10.0.1/ptolemy/copernicus/kernel/SootUtilities.java
+        	if(!targetClass.declaresMethodByName("<clinit>")) {
+        		@SuppressWarnings("rawtypes")
+				SootMethod emptyClinit = new SootMethod("<clinit>",
+		        										new LinkedList(),
+		        										NullType.v(),
+		        										Modifier.PUBLIC);
+        		emptyClinit.setActiveBody(Jimple.v().newBody(emptyClinit));
+        		targetClass.addMethod(emptyClinit);
+        	}
+            // Extract atomic segments from methods
+        	log.debug("Extracting atomic segments from " + className);
         	for(SootMethod targetMethod : targetClass.getMethods()) {
         		atomicExtractorT.apply(targetMethod.getActiveBody());
         	}
+        	
+        	// Now get the shared lvalues
+        	log.debug("Extracting shared LValues from " + className);
+        	SharedLValuesExtractor lValueExtractor = 
+                new SharedLValuesExtractor(atomicExtractor.getAtomicSegments());
+        	
+        	// Now check scope
+        	log.debug("Determining scope of shared LValues for each atomic segment");
+        	OutOfScopeCalculator scopeCalc = 
+        		new OutOfScopeCalculator(atomicExtractor.getAtomicSegments(),
+        								 lValueExtractor.getSharedLValues());
         }
-
-        /**
-        // Adding our transformers!
-        Pack wjtpPack = packManager.getPack("wjtp");
-
-        ImmediateRecursionEliminator recursionEliminator = new ImmediateRecursionEliminator(spec);
-        APICallRewriter apiCallRewriter = new APICallRewriter(spec);
-        WildcardTransformation wildcardTransformation = new WildcardTransformation(spec);
-        Map<Unit, APISpecCall> invToSpecCalls = wildcardTransformation.getInvokeStmtToSpecCalls();
-        StaticLocalizeTransformation localizeTransform = new StaticLocalizeTransformation(spec);
-        TransitiveReadWriteSetGenerator writeSetGenerator = TransitiveReadWriteSetGenerator.v(spec);
-
-        NormalizeBlocks normBBs = new NormalizeBlocks(spec);
-        NormalizeReturnStmts normRet = new NormalizeReturnStmts(spec);
-        SwitchStatementRemover swRemover = new SwitchStatementRemover(spec);
-        Assumify assumify = new Assumify(spec);
-        Devirtualize devirt = new Devirtualize(spec);
-        BreakBlocksOnCalls breakBlocks = new BreakBlocksOnCalls(invToSpecCalls, spec);
-        AbstractionLifter progAbs = new AbstractionLifter(spec, exprFactory, ctx, invToSpecCalls, cmdLine.getnUnroll(), breakBlocks.getReturnLocations());
-
-        Transform recurElimT = new Transform("wjtp.recelim", recursionEliminator);
-        Transform apiCallRewriteT = new Transform("wjtp.apirew", apiCallRewriter);
-        Transform wildcardT = new Transform("wjtp.wct", wildcardTransformation);
-        Transform localizeT = new Transform("wjtp.lct", localizeTransform);
-        Transform programAbsT = new Transform("wjtp.abs", progAbs);
-        Transform normBBsT = new Transform("wjtp.normbb", normBBs);
-        Transform normRetT = new Transform("wjtp.normRet", normRet);
-        Transform swRemoverT = new Transform("wjtp.swremov", swRemover);
-        Transform assumeT = new Transform("wjtp.assume", assumify);
-        Transform devirtT = new Transform("wjtp.devirt", devirt);
-        Transform breakCallsT = new Transform("wjtp.breakb", breakBlocks);
-        Transform writeSetT = new Transform("wjtp.writeSet", writeSetGenerator);
-
-        wjtpPack.add(recurElimT);
-        wjtpPack.add(apiCallRewriteT);
-        wjtpPack.add(devirtT);
-        wjtpPack.add(wildcardT);
-        wjtpPack.add(localizeT);
-        wjtpPack.add(programAbsT);
-        wjtpPack.add(normBBsT);
-        wjtpPack.add(normRetT);
-        wjtpPack.add(swRemoverT);
-        wjtpPack.add(assumeT);
-        wjtpPack.add(breakCallsT);
-        wjtpPack.add(writeSetT);
-
-        VerifierUtil.calculateReachableMethods();
-
-        swRemoverT.apply();
-        normBBsT.apply();
-        normRetT.apply();
-        devirtT.apply();
-        apiCallRewriteT.apply();
-        wildcardT.apply();
-        //writeSetT.apply();
-        localizeT.apply();
-        recurElimT.apply();
-        assumeT.apply();
-        breakCallsT.apply();
-        writeSetT.apply();
-        programAbsT.apply();
-
-        InterpolantGenerator interpGen = new InterpolantGenerator(exprFactory, spec, ctx, breakBlocks.getReturnLocations());
-        Checker cfpChecker = new Checker(spec, progAbs, interpGen);
-        cfpChecker.check();
-        */
         
         // Print classes out to file
         // Based on edu.utexas.cs.utopia.expresso.Driver

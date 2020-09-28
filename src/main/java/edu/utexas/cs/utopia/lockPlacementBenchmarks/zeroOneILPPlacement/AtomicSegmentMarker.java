@@ -3,6 +3,7 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 import soot.Body;
@@ -10,6 +11,7 @@ import soot.BodyTransformer;
 import soot.Local;
 import soot.Modifier;
 import soot.PatchingChain;
+import soot.RefType;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootField;
@@ -20,38 +22,52 @@ import soot.jimple.InvokeExpr;
 import soot.jimple.InvokeStmt;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
+import soot.jimple.NewExpr;
+import soot.jimple.ReturnStmt;
 import soot.jimple.SpecialInvokeExpr;
 import soot.jimple.StaticFieldRef;
 
 /**
- * Defines atomic segments as:
- * 		- The entire body of any non-constructor method,
- *         excluding the identity statements
+ * We assume the given class has at least one <clinit> method
  * 
- * Records all atomic segments in the body and adds a static, thread-local
+ * Defines atomic segments as:
+ * 		- The entire body of any non-constructor, non-static-initializer,
+ * 		   non-main method,
+ *         excluding the identity statements and
+ *         return statements
+ * 
+ * Records all atomic segments in the body and adds a static
  * TwoPhaseLockManager field to the class so that
  * nested locking will be feasible.
- * 
- * Note that implementing a generic using soot is tricky because
- * of type erasure. Consequently, the lock manager
- * field is of type java.lang.ThreadLocal, and casts are inserted
- * to maintain type safety.
+ * Adds a enterAtomicSegment() before each atomic segment
+ * and exitAtomicSegment() after each atomic segment
  * 
  * @author Ben_Sepanski
  */
-public class AtomicSegmentExtractor extends BodyTransformer {
+public class AtomicSegmentMarker extends BodyTransformer {
 	
-	private static String lockManagerName = "$threadLocalTwoPhaseLockManager";
-	private static SootClass 
+	private static final String lockManagerName = "$threadLocalTwoPhaseLockManager";
+	private static final SootClass 
 		lockManagerClass = Scene.v().getSootClass(TwoPhaseLockManager.class.getName());
 	
-	private HashMap<Body, ArrayList<AtomicSegment>>
+	private final HashMap<Body, ArrayList<AtomicSegment>>
 		atomicSegments = new HashMap<Body, ArrayList<AtomicSegment>>();
-	private HashMap<SootClass, SootField> 
+	private final HashMap<SootClass, SootField> 
 		classToTwoPhaseLockManager = new HashMap<SootClass, SootField>();
 	
 	/**
-	 * Get the next atomic segment
+	 * 
+	 * @return a map from method bodies to the atomic segments defined
+	 *         within
+	 */
+	public HashMap<Body, ArrayList<AtomicSegment>> getAtomicSegments() {
+		return atomicSegments;
+	}
+	
+	/**
+	 * Get the next atomic segment. We assume that these
+	 * atomic segments only begin on or after the first non-identity
+	 * statement in the body
 	 * 
 	 * @param body the current body being transformed
 	 * @param prevAtomicSegment the previous atomic segment, or null if there is none
@@ -65,7 +81,7 @@ public class AtomicSegmentExtractor extends BodyTransformer {
 		JimpleBody jimpBody = (JimpleBody) body;
 		Unit firstUnit = jimpBody.getFirstNonIdentityStmt();
 		Unit lastUnit = jimpBody.getUnits().getLast();
-		return new AtomicSegment(jimpBody, firstUnit, lastUnit);
+		return new AtomicSegment(firstUnit, lastUnit);
 	}
 	
 	/**
@@ -96,15 +112,19 @@ public class AtomicSegmentExtractor extends BodyTransformer {
 		// If a static constructor, initialize this.<lockManagerName>
 		JimpleBody jimpBody = (JimpleBody) body;
 		if(body.getMethod().getName().equals("<clinit>")) {
-			// Make a local lock manager and initialize it
+			// Make a local lock manager
 			SootField lockManagerField = this.getLockManagerField(body);
 			Local newLockManagerLocal = Jimple.v().newLocal(lockManagerName + "Initializer",
 															lockManagerField.getType());
+			RefType lockManagerRefType = soot.RefType.v(lockManagerField.getType().toString());
+			NewExpr localNewExpr = Jimple.v().newNewExpr(lockManagerRefType);
+			AssignStmt localNewStmt = Jimple.v().newAssignStmt(newLockManagerLocal, localNewExpr);
+			// Initialize the lock manager
 			SootMethodRef lockManagerInitRef = lockManagerClass.getMethod("void <init>()")
 															   .makeRef();
 			SpecialInvokeExpr initExpr = Jimple.v().newSpecialInvokeExpr(newLockManagerLocal,
 																		 lockManagerInitRef);
-			InvokeStmt newLockManagerLocalInit = Jimple.v().newInvokeStmt(initExpr);
+			InvokeStmt localInitStmt = Jimple.v().newInvokeStmt(initExpr);
 			// Assign this.lockManager to that initialized local
 			StaticFieldRef lockManagerFieldRef = Jimple.v().newStaticFieldRef(lockManagerField.makeRef());
 			AssignStmt initializeLockManager = Jimple.v().newAssignStmt(lockManagerFieldRef,
@@ -112,14 +132,22 @@ public class AtomicSegmentExtractor extends BodyTransformer {
 			// Add the new local to the body
 			body.getLocals().add(newLockManagerLocal);
 			// Now insert those instructions into the method
-			Unit lastNonIdentity = jimpBody.getFirstNonIdentityStmt();
-			jimpBody.getUnits().insertAfter(Arrays.asList(newLockManagerLocalInit,
-													      initializeLockManager),
-										    lastNonIdentity);
+			if(jimpBody.getUnits().size() > 0) {
+				Unit lastNonIdentity = jimpBody.getFirstNonIdentityStmt();
+				jimpBody.getUnits().insertAfter(Arrays.asList(localNewStmt,
+														  	  localInitStmt,
+													          initializeLockManager),
+										        lastNonIdentity);
+			}
+			else {
+				jimpBody.getUnits().addAll(Arrays.asList(localNewStmt,
+														 localInitStmt,
+														 initializeLockManager));
+			}
 			return;
 		}
 		// If a non-static constructor, nothing to do
-		if(body.getMethod().isConstructor()) {
+		if(body.getMethod().isConstructor() || body.getMethod().isMain()) {
 			return;
 		}	
 		
@@ -146,7 +174,7 @@ public class AtomicSegmentExtractor extends BodyTransformer {
 		jimpBody.getLocals().add(lockManagerLocal);
 		PatchingChain<Unit> units = jimpBody.getUnits();
 		Unit lastNonIdentity = jimpBody.getFirstNonIdentityStmt();
-		units.insertAfter(lockManagerAssignmentToLocal, lastNonIdentity);
+		units.insertBefore(lockManagerAssignmentToLocal, lastNonIdentity);
 		
 		// Get invocation expressions for atomic entrance/exit
 		SootClass lockManagerClass = 
@@ -161,9 +189,30 @@ public class AtomicSegmentExtractor extends BodyTransformer {
 		InvokeExpr lockManagerExit = Jimple.v().newVirtualInvokeExpr(lockManagerLocal,
 															    	 lockManagerExitRef);
 		// Insert invocations for atomic entrance/exit before/after each segment
+		// and exit before each return statement
 		for(AtomicSegment as : bodyAtomicSegs) {
+			// Handle entering the atomic segment
 			InvokeStmt enterAtomic = Jimple.v().newInvokeStmt(lockManagerEnter);
 			units.insertBefore(enterAtomic, as.getFirstUnit());
+			// Handle return statements
+			Iterator<Unit> atUnitIter = units.iterator(as.getFirstUnit(), as.getLastUnit());
+			ArrayList<Unit> returnsInSeg = new ArrayList<>();
+			while(atUnitIter.hasNext()) {
+				Unit atUnit = atUnitIter.next();
+				if(atUnit instanceof ReturnStmt) {
+					returnsInSeg.add(atUnit);
+				}
+			}
+			for(Unit returnUnit : returnsInSeg) {
+				InvokeStmt exitAtomicBeforeReturn = Jimple.v().newInvokeStmt(lockManagerExit);
+				units.insertBefore(exitAtomicBeforeReturn, returnUnit);
+			}
+			
+			// don't add anything after a return statement, because we just added it
+			if(as.getLastUnit() instanceof ReturnStmt) {
+				continue;
+			}
+			// handle last statement in atomic segment
 			InvokeStmt exitAtomic = Jimple.v().newInvokeStmt(lockManagerExit);
 			units.insertAfter(exitAtomic, as.getLastUnit());
 		}

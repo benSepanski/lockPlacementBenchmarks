@@ -1,6 +1,5 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
-import soot.jimple.JimpleBody;
 import soot.Unit;
 
 /**
@@ -14,12 +13,10 @@ import soot.Unit;
  * @author Ben_Sepanski
  */
 public class AtomicSegment {
-	private JimpleBody sootBody;
 	private Unit firstUnit, lastUnit;
 	
 	/**
 	 * 
-	 * @param sootBody 
 	 * @param firstUnit the first unit in the atomic segment, assumed
 	 * 		  to be a unit in sootBody outside of
 	 *        any branch/loop statements which dominates lastUnit in
@@ -28,8 +25,7 @@ public class AtomicSegment {
 	 *        to be a unit in sootBody outside of any branch/loop
 	 *        statements.
 	 */
-	public AtomicSegment(JimpleBody sootBody, Unit firstUnit, Unit lastUnit) {
-		this.sootBody = sootBody;
+	public AtomicSegment(Unit firstUnit, Unit lastUnit) {
 		this.firstUnit = firstUnit;
 		this.lastUnit = lastUnit;
 	}
@@ -40,9 +36,5 @@ public class AtomicSegment {
 	
 	public Unit getLastUnit() {
 		return lastUnit;
-	}
-	
-	public JimpleBody getSootBody() {
-		return sootBody;
 	}
 }
