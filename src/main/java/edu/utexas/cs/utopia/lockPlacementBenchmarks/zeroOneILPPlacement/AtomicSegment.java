@@ -3,10 +3,16 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 import soot.Unit;
 
 /**
- * Representation of an atomic segment inside a method. 
+ * Representation of an atomic segment inside a method.
  * 
  * Simply remembers the first and last unit, along with the
- * body.
+ * body. 
+ * 
+ * We assume the last unit, along with any return
+ * statements inside the atomic segment, dominate the first unit.
+ * 
+ * We also assume that no shared values are accessed in
+ * a return statement.
  * 
  * Does no error checking.
  * 

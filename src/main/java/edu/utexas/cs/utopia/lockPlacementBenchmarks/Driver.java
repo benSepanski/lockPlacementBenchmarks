@@ -179,11 +179,18 @@ public class Driver
         	SharedLValuesExtractor lValueExtractor = 
                 new SharedLValuesExtractor(atomicExtractor.getAtomicSegments());
         	
-        	// Now check scope
+        	// Now get the scope
         	log.debug("Determining scope of shared LValues for each atomic segment");
         	OutOfScopeCalculator scopeCalc = 
         		new OutOfScopeCalculator(atomicExtractor.getAtomicSegments(),
         								 lValueExtractor.getSharedLValues());
+
+        	// Compute the accessed-before relation 
+        	
+        	// TODO : Put alias relation here
+        	
+        	// Build and solve our constraints
+        	
         }
         
         // Print classes out to file

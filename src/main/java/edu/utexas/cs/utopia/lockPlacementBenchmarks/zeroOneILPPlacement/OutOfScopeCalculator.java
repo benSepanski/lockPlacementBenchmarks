@@ -62,15 +62,15 @@ public class OutOfScopeCalculator {
 	}
 	
 	/**
-	 * Return the subset of shared lValues which are not in scope
-	 * at the beginning of atomicSeg, or null if atomicSeg is
-	 * not recognized
+	 * Return a mapping
+	 * from atomic segments to the subset of shared lValues 
+	 * which are not in scope
+	 * at the beginning of the segment
 	 * 
-	 * @param atomicSeg
-	 * @return
+	 * @return the mapping
 	 */
-	public HashSet<LValueBox> getOutOfScope(AtomicSegment atomicSeg) {
-		return outOfScope.get(atomicSeg);
+	public HashMap<AtomicSegment, HashSet<LValueBox>> getOutOfScope() {
+		return outOfScope;
 	}
 	
 	/**

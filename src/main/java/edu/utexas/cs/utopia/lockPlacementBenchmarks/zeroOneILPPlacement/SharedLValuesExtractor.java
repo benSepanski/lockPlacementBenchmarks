@@ -68,14 +68,13 @@ public class SharedLValuesExtractor {
 	}
 	
 	/**
-	 * Get all the LValues accessed in a particular atomic segment,
-	 * or null if the atomic segment has not been recorded
+	 * Get a mapping from atomic segments to
+	 *  all the LValues accessed in the segment
 	 * 
-	 * @param atomicSeg
 	 * @return
 	 */
-	public HashSet<LValueBox> getLValuesAccessedIn(AtomicSegment atomicSeg) {
-		return atomicSegmentToAccessedLValues.get(atomicSeg);
+	public HashMap<AtomicSegment, HashSet<LValueBox>> getLValuesAccessedIn() {
+		return atomicSegmentToAccessedLValues;
 	}
 
 	/**
