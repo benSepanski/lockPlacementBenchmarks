@@ -3,6 +3,10 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Objects;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import soot.Body;
 import soot.Scene;
@@ -10,7 +14,7 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.Unit;
 import soot.jimple.InvokeStmt;
-import soot.toolkits.graph.ExceptionalUnitGraph;
+import soot.toolkits.graph.BriefUnitGraph;
 import soot.toolkits.scalar.ArrayPackedSet;
 import soot.toolkits.scalar.CollectionFlowUniverse;
 import soot.toolkits.scalar.FlowSet;
@@ -29,11 +33,12 @@ import soot.toolkits.scalar.ForwardFlowAnalysis;
  *
  */
 class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThenModifiedSet> {	
+	private static Logger log = LoggerFactory.getLogger(AccessedBeforeRelationOnBody.class);
+
 	private static SootClass lockManagerClass = Scene.v().getSootClass(
 		"edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.TwoPhaseLockManager");
 	private static SootMethod 
-		enterAtomicMethod = lockManagerClass.getMethod("void enterAtomicSegment()"),
-		exitAtomicMethod = lockManagerClass.getMethod("void exitAtomicSegment()");
+		enterAtomicMethod = lockManagerClass.getMethod("void enterAtomicSegment()");
 	private static CollectionFlowUniverse<LValueBox>
 		emptyUniv = new CollectionFlowUniverse<>(new HashSet<LValueBox>());
 	
@@ -53,7 +58,7 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
 
 	public AccessedBeforeRelationOnBody(PointerAnalysis ptrAnalysis, Body b, HashSet<LValueBox> sharedLValues) 
 	{
-		super(new ExceptionalUnitGraph(b));		
+		super(new BriefUnitGraph(b));		
 		this.ptrAnalysis = ptrAnalysis;
 		this.sharedLValues = sharedLValues;
 		this.univ = new CollectionFlowUniverse<LValueBox>(sharedLValues);
@@ -61,7 +66,9 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
 		for(LValueBox lvb : sharedLValues) {
 			this.accessedBefore.put(lvb, new HashSet<LValueBox>());
 		}
+		log.debug("Begnning flow analysis on " + b.getMethod().getName());
 		this.doAnalysis();
+		log.debug("Flow analysis complete");
 	}
 
 	/**
@@ -73,27 +80,22 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
 	 */
 	@Override
 	protected void flowThrough(AccessedThenModifiedSet in, Unit d, AccessedThenModifiedSet out) {
-		// If at the start/end of an atomic segment, change
-		// the universe to the lvalues/the empty universe. In latter case return
-		if(d instanceof InvokeStmt) {
+		// If at the start of an atomic segment, change
+		// the universe to the lvalues. If leaving an atomic segment,
+		// there is nothing to do
+		if(out.getUniverse().equals(emptyUniv) && d instanceof InvokeStmt) {
 			InvokeStmt invk = (InvokeStmt) d;
 			if(invk.getInvokeExpr().getMethod().equals(enterAtomicMethod)) {
 				out = new AccessedThenModifiedSet(univ, ptrAnalysis);
 			}
-			else if(invk.getInvokeExpr().getMethod().equals(exitAtomicMethod)) {
-				out = new AccessedThenModifiedSet(emptyUniv, null);
-				return;
-			}
 		}
 		// Now if considering empty universe (i.e. we're not in an atomic section),
-		// out will be the same as in
+		// out will not change
 		if(in.getUniverse().equals(emptyUniv)) {
-			out = new AccessedThenModifiedSet(emptyUniv, null);
 			return;
 		}
 		// Otherwise, we are inside an atomic segment.
 		// Copy in into out
-		out = new AccessedThenModifiedSet(univ, ptrAnalysis);
 		in.copy(out);
 		// Look at use and defs to record what gets accessed
 		HashSet<LValueBox> useAndDefBoxes = LValueBox.getAllLValues(d.getUseAndDefBoxes());
@@ -112,7 +114,7 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
 	protected AccessedThenModifiedSet newInitialFlow() {
 		return new AccessedThenModifiedSet(emptyUniv, null);
 	}
-
+	
 	@Override
 	protected void merge(AccessedThenModifiedSet in1, AccessedThenModifiedSet in2, AccessedThenModifiedSet out) {
 		out.merge(in1, in2);  // merge in1, in2 into out
@@ -133,8 +135,8 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
  * @author Ben_Sepanski
  */
 class AccessedThenModifiedSet {
-	public ArrayPackedSet<LValueBox> accessedInAtomic;
-	public FlowSet<LValueBox> accessedThenModInAtomic;
+	private ArrayPackedSet<LValueBox> accessedInAtomic;
+	private ArrayPackedSet<LValueBox> accessedThenModInAtomic;
 	private FlowUniverse<LValueBox> universe;
 	private PointerAnalysis ptrAnalysis;
 	
@@ -150,6 +152,29 @@ class AccessedThenModifiedSet {
 		universe = univ;
 		ptrAnalysis = _ptrAnalysis;
 	}
+	
+	/**
+	 * Overload equals to just check that have same
+	 * flowsets, ptr analysis, and universe
+	 * @param that
+	 * @return
+	 */
+	@Override
+	public boolean equals(Object that) {
+		if(that == this) return true;
+		if(!(that instanceof AccessedThenModifiedSet)) return false;
+		AccessedThenModifiedSet other = (AccessedThenModifiedSet) that;
+		if(!(
+			 Objects.equals(accessedInAtomic, other.accessedInAtomic)
+			 && Objects.equals(accessedThenModInAtomic, other.accessedThenModInAtomic)
+			 && Objects.equals(universe, other.universe)
+			 && Objects.equals(ptrAnalysis, other.ptrAnalysis)))
+		{
+			return false;
+		}
+		return true;
+	}
+	
 	/**
 	 * Get the current universe
 	 * @return
@@ -181,10 +206,10 @@ class AccessedThenModifiedSet {
 	public void merge(AccessedThenModifiedSet in1, AccessedThenModifiedSet in2) {
 		assert(in1.getUniverse().equals(in2.getUniverse()));
 		assert(in1.ptrAnalysis.equals(in2.ptrAnalysis));
-		in1.copy(this); // copy in1 into this
-		// union in2 into this
-		this.accessedInAtomic.union(in2.accessedInAtomic);
-		this.accessedThenModInAtomic.union(in2.accessedThenModInAtomic);
+		this.universe = in1.universe;
+		this.ptrAnalysis = in1.ptrAnalysis;
+		in1.accessedInAtomic.union(in2.accessedInAtomic, this.accessedInAtomic);
+		in1.accessedThenModInAtomic.union(in2.accessedThenModInAtomic, this.accessedThenModInAtomic);
 	}
 	/**
 	 * Record all the LValues w1,...,wn in accessedLVals as accessed
@@ -224,7 +249,7 @@ class AccessedThenModifiedSet {
 			for(LValueBox possMod : possibleModLVals) {
 				// If they may alias, record lvb as possibly modified
 				// and add it to accessedBefore
-				if(ptrAnalysis.getAliasRelation(possMod, lvb) != AliasRelation.NOT_ALIAS) {
+				if(ptrAnalysis.getAliasRelation(possMod, lvb).equals(AliasRelation.NOT_ALIAS)) {
 					accessedThenModInAtomic.add(lvb);
 					break;
 				}

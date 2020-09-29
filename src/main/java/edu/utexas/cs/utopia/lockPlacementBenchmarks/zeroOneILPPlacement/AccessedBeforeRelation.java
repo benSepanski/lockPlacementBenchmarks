@@ -1,17 +1,19 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map.Entry;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import soot.SootClass;
 import soot.SootMethod;
 
 public class AccessedBeforeRelation {
+	private static Logger log = LoggerFactory.getLogger(AccessedBeforeRelation.class);
 	private HashMap<LValueBox, HashSet<LValueBox>> accessedBefore;
 	
 	/**
@@ -30,6 +32,7 @@ public class AccessedBeforeRelation {
 		for(LValueBox lvb : sharedLValues) {
 			edgeList.put(lvb,  new HashSet<LValueBox>());
 		}
+		log.debug("Adding accessed before relations from class methods");
 		// Add edges from all method bodies
 		AccessedBeforeRelationOnBody accOnBody;
 		for(SootMethod mthd : cls.getMethods()) {
@@ -41,9 +44,11 @@ public class AccessedBeforeRelation {
 				}
 			}
 		}
+		log.debug("Computing SCCs and topo sort of access graph");
 		// Get topo sort and sccs
 		ArrayList<LValueBox> revTopoSort = revTopoSortNodes(edgeList, null);
 		ArrayList<HashSet<LValueBox>> sccs = getSCCs(edgeList);
+		log.debug("Building accessedBefore relation");
 		// Create ordering
 		accessedBefore = new HashMap<>();
 		for(HashSet<LValueBox> scc : sccs) {
@@ -99,7 +104,7 @@ public class AccessedBeforeRelation {
 			// order to its scc
 			lValToScc.put(next, numSccs);
 			LValueBox transposeNext = transposeRevTopoSortIter.next();
-			while(transposeNext != next) {
+			while(!transposeNext.equals(next)) {
 				lValToScc.put(transposeNext, numSccs);
 				transposeNext = transposeRevTopoSortIter.next();
 			}
@@ -163,7 +168,7 @@ public class AccessedBeforeRelation {
 					 ArrayList<LValueBox> visitedOrder) {
 		status.put(curNode, DFS_STATUS.VISITING);
 		for(LValueBox nbr : edgeList.get(curNode)) {
-			if(status.get(nbr) == DFS_STATUS.UNVISITED) {
+			if(status.get(nbr).equals(DFS_STATUS.UNVISITED)) {
 				dfs(edgeList, nbr, status, visitedOrder);
 			}
 		}
