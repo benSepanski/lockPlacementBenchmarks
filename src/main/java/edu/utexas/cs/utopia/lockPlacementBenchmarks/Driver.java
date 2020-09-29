@@ -30,8 +30,11 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AccessedBeforeRelation;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OptimisticPointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
 
 /**
@@ -140,6 +143,9 @@ public class Driver
 
         Instant start = Instant.now();
         
+        // Get pointer analysis
+        PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
+        
         // Adding our transformers!
         Pack jtpPack = packManager.getPack("jtp");     
         log.debug("Adding custom soot transforms");
@@ -186,6 +192,11 @@ public class Driver
         								 lValueExtractor.getSharedLValues());
 
         	// Compute the accessed-before relation 
+        	log.debug("extracting accessed before relation");
+        	AccessedBeforeRelation 
+        		accBefore = new AccessedBeforeRelation(ptrAnalysis,
+        											   targetClass,
+        											   lValueExtractor.getSharedLValues());
         	
         	// TODO : Put alias relation here
         	

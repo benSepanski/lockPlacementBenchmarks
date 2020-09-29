@@ -1,217 +1,173 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map.Entry;
 
-import soot.Body;
-import soot.Scene;
+
 import soot.SootClass;
 import soot.SootMethod;
-import soot.Unit;
-import soot.ValueBox;
-import soot.jimple.InvokeStmt;
-import soot.jimple.Jimple;
-import soot.jimple.SpecialInvokeExpr;
-import soot.toolkits.graph.ExceptionalUnitGraph;
-import soot.toolkits.graph.UnitGraph;
-import soot.toolkits.scalar.ArrayPackedSet;
-import soot.toolkits.scalar.CollectionFlowUniverse;
-import soot.toolkits.scalar.FlowSet;
-import soot.toolkits.scalar.FlowUniverse;
-import soot.toolkits.scalar.ForwardFlowAnalysis;
 
-/**
- * Determine for two LValues v1, v2 if there
- * exists a path in an atomic section where 
- * 		v1 is accessed
- * 	    v1 is possibly modified
- * 		v2 is accessed
- * then we say v1 accessedBefore v2
- * 
- * @author Ben_Sepanski
- *
- */
-public class AccessedBeforeRelation extends ForwardFlowAnalysis<Unit, AccessedThenModifiedSet> {	
-	private static SootClass lockManagerClass = Scene.v().getSootClass(
-		"edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.TwoPhaseLockManager");
-	private static SootMethod 
-		enterAtomicMethod = lockManagerClass.getMethod("void enterAtomicSegment()"),
-		exitAtomicMethod = lockManagerClass.getMethod("void exitAtomicSegment()");
-	private static CollectionFlowUniverse<LValueBox>
-		emptyUniv = new CollectionFlowUniverse<>(new HashSet<LValueBox>());
-	
-	private PointerAnalysis ptrAnalysis;
-	private HashSet<LValueBox> sharedLValues;
-	private CollectionFlowUniverse<LValueBox> univ;
-
-	public AccessedBeforeRelation(PointerAnalysis ptrAnalysis, Body b, HashSet<LValueBox> sharedLValues) 
-	{
-		super(new ExceptionalUnitGraph(b));		
-		this.ptrAnalysis = ptrAnalysis;
-		this.sharedLValues = sharedLValues;
-		this.univ = new CollectionFlowUniverse<LValueBox>(sharedLValues);
-		this.doAnalysis();
-	}
-
-	/**
-	 * If we are at the start/end of an atomic section, change
-	 * the universe to the lvalues/the empty universe.
-	 * 
-	 * Then, if inside an atomic segment record reads and possible
-	 * modifies.
-	 */
-	@Override
-	protected void flowThrough(AccessedThenModifiedSet in, Unit d, AccessedThenModifiedSet out) {
-		// If at the start/end of an atomic segment, change
-		// the universe to the lvalues/the empty universe. In latter case return
-		if(d instanceof InvokeStmt) {
-			InvokeStmt invk = (InvokeStmt) d;
-			if(invk.getInvokeExpr().getMethod().equals(enterAtomicMethod)) {
-				out = new AccessedThenModifiedSet(univ, ptrAnalysis);
-			}
-			else if(invk.getInvokeExpr().getMethod().equals(exitAtomicMethod)) {
-				out = new AccessedThenModifiedSet(emptyUniv, null);
-				return;
-			}
-		}
-		// Now if considering empty universe (i.e. we're not in an atomic section),
-		// out will be the same as in
-		if(in.getUniverse().equals(emptyUniv)) {
-			out = new AccessedThenModifiedSet(emptyUniv, null);
-			return;
-		}
-		// Otherwise, we are inside an atomic segment.
-		// Copy in into out
-		out = new AccessedThenModifiedSet(univ, ptrAnalysis);
-		in.copy(out);
-		// Look at use and defs to record what gets accessed
-		HashSet<LValueBox> useAndDefBoxes = LValueBox.getAllLValues(d.getUseAndDefBoxes());
-		useAndDefBoxes.retainAll(sharedLValues);
-		out.recordAccess(useAndDefBoxes);
-		// Look at defs to record what might get modified
-		HashSet<LValueBox> defBoxes = LValueBox.getAllLValues(d.getDefBoxes());
-		defBoxes.retainAll(sharedLValues);
-		out.recordPossibleMod(defBoxes);
-	}
-
-	/**
-	 * Start with an empty universe
-	 */
-	@Override
-	protected AccessedThenModifiedSet newInitialFlow() {
-		return new AccessedThenModifiedSet(emptyUniv, null);
-	}
-
-	@Override
-	protected void merge(AccessedThenModifiedSet in1, AccessedThenModifiedSet in2, AccessedThenModifiedSet out) {
-		out.merge(in1, in2);  // merge in1, in2 into out
-	}
-
-	@Override
-	protected void copy(AccessedThenModifiedSet source, AccessedThenModifiedSet dest) {
-		source.copy(dest);  // copy source into dest
-	}
-}
-
-
-/**
- * Just a struct basically keeping track of lvalues that
- * have been accessed inside an atomic and of lvalues
- * that have been accessed then modified inside an atomic 
- * 
- * @author Ben_Sepanski
- */
-class AccessedThenModifiedSet {
-	public ArrayPackedSet<LValueBox> accessedInAtomic;
-	public FlowSet<LValueBox> accessedThenModInAtomic;
-	private FlowUniverse<LValueBox> universe;
-	private PointerAnalysis ptrAnalysis;
+public class AccessedBeforeRelation {
+	private HashMap<LValueBox, HashSet<LValueBox>> accessedBefore;
 	
 	/**
-	 * Build a ReadThenModifiedSet
-	 * 
-	 * @param univ The universe of LValues
-	 * @param _ptrAnalysis tells us what might be aliased
-	 */
-	public AccessedThenModifiedSet(FlowUniverse<LValueBox> univ, PointerAnalysis _ptrAnalysis) {
-		accessedInAtomic = new ArrayPackedSet<LValueBox>(univ);
-		accessedThenModInAtomic = new ArrayPackedSet<LValueBox>(univ);
-		universe = univ;
-		ptrAnalysis = _ptrAnalysis;
-	}
-	/**
-	 * Get the current universe
+	 * Get a map from each LValueBox v to {w | v accessedBefore w}
 	 * @return
 	 */
-	public FlowUniverse<LValueBox> getUniverse() {
-		return this.universe;
+	public HashMap<LValueBox, HashSet<LValueBox>> getAccessedBefore() {
+		return accessedBefore;
 	}
-	/**
-	 * Deep copy this into that
-	 * 
-	 * @param that
-	 */
-	public void copy(AccessedThenModifiedSet that) {
-		that.universe = this.universe;
-		that.ptrAnalysis = this.ptrAnalysis;
-		this.accessedInAtomic.copy(that.accessedInAtomic);
-		this.accessedThenModInAtomic.copy(that.accessedThenModInAtomic);
-	}
-	/**
-	 * Store union of in1 and in2 in this.
-	 * We assume that in1 and in2 have the same universe
-	 * (which is fine if our atomic segments are placed reasonably)
-	 * and the same pointer analysis
-	 * 
-	 * @param in1
-	 * @param in2
-	 * @param out
-	 */
-	public void merge(AccessedThenModifiedSet in1, AccessedThenModifiedSet in2) {
-		assert(in1.getUniverse().equals(in2.getUniverse()));
-		assert(in1.ptrAnalysis.equals(in2.ptrAnalysis));
-		in1.copy(this); // copy in1 into this
-		// union in2 into this
-		this.accessedInAtomic.union(in2.accessedInAtomic);
-		this.accessedThenModInAtomic.union(in2.accessedThenModInAtomic);
-	}
-	/**
-	 * Record all the LValues in accessedLVals as accessed
-	 * in the atomic section
-	 * 
-	 * @param accessedLVals
-	 */
-	public void recordAccess(HashSet<LValueBox> accessedLVals) {
-		for(LValueBox lvb : accessedLVals) {
-			this.accessedInAtomic.add(lvb);
+	
+	public AccessedBeforeRelation(PointerAnalysis ptrAnalysis,
+			  					  SootClass cls,
+								  HashSet<LValueBox> sharedLValues) {
+		// Initialize graph with no edges
+		HashMap<LValueBox, HashSet<LValueBox>> edgeList = new HashMap<>();
+		for(LValueBox lvb : sharedLValues) {
+			edgeList.put(lvb,  new HashSet<LValueBox>());
 		}
-	}
-	/**
-	 * Mark all the LValues in possibleModLVals which have
-	 * already been accessed in the atomic section
-	 * as possibly modified.
-	 * 
-	 * Use the alias analysis to be sure we don't miss
-	 * anything
-	 * 
-	 * @param possibleModLVals
-	 */
-	public void recordPossibleMod(HashSet<LValueBox> possibleModLVals) {
-		// For each already accessed element
-		Iterator<LValueBox> alreadyAccessed = accessedInAtomic.iterator();
-		while(alreadyAccessed.hasNext()) {
-			LValueBox lvb = alreadyAccessed.next();
-			// For each possibly modified value
-			for(LValueBox possMod : possibleModLVals) {
-				// If they may alias, record lvb as possibly modified
-				if(ptrAnalysis.getAliasRelation(possMod, lvb) != AliasRelation.NOT_ALIAS) {
-					accessedThenModInAtomic.add(lvb);
-					break;
+		// Add edges from all method bodies
+		AccessedBeforeRelationOnBody accOnBody;
+		for(SootMethod mthd : cls.getMethods()) {
+			accOnBody = new AccessedBeforeRelationOnBody(ptrAnalysis, mthd.getActiveBody(), sharedLValues);
+			for(Entry<LValueBox, HashSet<LValueBox>> edges : accOnBody.getAccessedBefore().entrySet()) {
+				LValueBox from = edges.getKey();
+				for(LValueBox to : edges.getValue()) {
+					edgeList.get(from).add(to);
 				}
 			}
 		}
+		// Get topo sort and sccs
+		ArrayList<LValueBox> revTopoSort = revTopoSortNodes(edgeList, null);
+		ArrayList<HashSet<LValueBox>> sccs = getSCCs(edgeList);
+		// Create ordering
+		accessedBefore = new HashMap<>();
+		for(HashSet<LValueBox> scc : sccs) {
+			for(LValueBox lvb : scc) {
+				// 	This is accessed before everything in its SCC
+				accessedBefore.put(lvb, scc);
+			}
+		}
+		ArrayList<LValueBox> seen = new ArrayList<>();
+		for(LValueBox lvb : revTopoSort) {
+			// this is accessed before everything that comes after it
+			// in the topo sort
+			for(LValueBox seenLVal : seen) {
+				accessedBefore.get(lvb).add(seenLVal);
+			}
+			seen.add(lvb);
+		}
+	}
+	
+	/**
+	 * Get a list of the strongly connected components
+	 */
+	private ArrayList<HashSet<LValueBox>> getSCCs(HashMap<LValueBox, HashSet<LValueBox>> edgeList) {
+		ArrayList<LValueBox> revTopoOrder = revTopoSortNodes(edgeList, null);
+		// build transpose graph
+		HashMap<LValueBox, HashSet<LValueBox>> transposeEdgeList = new HashMap<>();
+		for(Entry<LValueBox, HashSet<LValueBox>> entry : edgeList.entrySet()) {
+			LValueBox from = entry.getKey();
+			for(LValueBox to : entry.getValue()) {
+				transposeEdgeList.getOrDefault(to, new HashSet<LValueBox>()).add(from);
+			}
+		}
+		// get topo sort of transpose graph using reverse topoOrder
+		ArrayList<LValueBox> transposeRevTopoOrder = revTopoSortNodes(transposeEdgeList, revTopoOrder);
+		// This will map lvalues to their scc index
+		HashMap<LValueBox, Integer> lValToScc = new HashMap<>();
+
+		// In same connected component iff a <= b (topo sort)
+		// and b <=_T a (transpose topo sort)
+		// So, last element in topo sort has same SCC as everything
+		// after it in transpose topo sort
+		Iterator<LValueBox> revTopoSortIter = revTopoOrder.iterator(),
+			transposeRevTopoSortIter = transposeRevTopoOrder.iterator();
+		// For each value in reverse topological order
+		int numSccs = 0;
+		while(revTopoSortIter.hasNext()) {
+			// See if we've already computed this value's SCC
+			LValueBox next = revTopoSortIter.next();
+			if(lValToScc.containsKey(next)) {
+				continue;
+			}
+			// If not, add everything that comes after it in the transpose topological
+			// order to its scc
+			lValToScc.put(next, numSccs);
+			LValueBox transposeNext = transposeRevTopoSortIter.next();
+			while(transposeNext != next) {
+				lValToScc.put(transposeNext, numSccs);
+				transposeNext = transposeRevTopoSortIter.next();
+			}
+			numSccs++;
+		}
+		ArrayList<HashSet<LValueBox>> sccs = new ArrayList<>();
+		for(int i = 0; i < numSccs; ++i) {
+			sccs.add(new HashSet<LValueBox>());
+		}
+		for(Entry<LValueBox, Integer> entry : lValToScc.entrySet()) {
+			sccs.get(entry.getValue()).add(entry.getKey());
+		}
+		return sccs;
+	}
+	
+	/**
+	 * Returns a reverse topological sort of the nodes
+	 * by doing a dfs and recording the visited order
+	 * 
+	 * Runs a dfs on each node in the order given by dfsOrder.
+	 * If dfsOrder is null, the ordering is undefined.
+	 * 
+	 * @param edgeList
+	 * @param dfsOrder
+	 * @return
+	 */
+	private ArrayList<LValueBox> revTopoSortNodes(HashMap<LValueBox, HashSet<LValueBox>> edgeList,
+											      ArrayList<LValueBox> dfsOrder) {
+		// initial status is unvisited
+		HashMap<LValueBox, DFS_STATUS> status = new HashMap<>();
+		for(LValueBox lvb : edgeList.keySet()) {
+			status.put(lvb, DFS_STATUS.UNVISITED);
+		}
+		// if no order given, make one
+		if(dfsOrder == null) {
+			dfsOrder = new ArrayList<LValueBox>(edgeList.keySet());
+		}
+		ArrayList<LValueBox> revTopoSort = new ArrayList<>();
+		for(LValueBox lvb : dfsOrder) {
+			dfs(edgeList, lvb, status, revTopoSort);
+		}
+		// Topo sort is reverse of visiting order
+		return revTopoSort;
+	}
+	
+	private static enum DFS_STATUS {
+		UNVISITED, VISITING, VISITED
+	}
+	/**
+	 * DFS from current node, recording status as we go.
+	 * Store the order in which nodes are visited (return from dfs)
+	 * in visitedOrder
+	 * 
+	 * @param curNode
+	 * @param status
+	 * @param visitedOrder
+	 */
+	private void dfs(HashMap<LValueBox, HashSet<LValueBox>> edgeList,
+					 LValueBox curNode,
+					 HashMap<LValueBox, DFS_STATUS> status,
+					 ArrayList<LValueBox> visitedOrder) {
+		status.put(curNode, DFS_STATUS.VISITING);
+		for(LValueBox nbr : edgeList.get(curNode)) {
+			if(status.get(nbr) == DFS_STATUS.UNVISITED) {
+				dfs(edgeList, nbr, status, visitedOrder);
+			}
+		}
+		status.put(curNode, DFS_STATUS.VISITED);
+		visitedOrder.add(curNode);
 	}
 }
