@@ -4,3 +4,4 @@
 *.jimple
 *.class
 *.jar
+target/*
