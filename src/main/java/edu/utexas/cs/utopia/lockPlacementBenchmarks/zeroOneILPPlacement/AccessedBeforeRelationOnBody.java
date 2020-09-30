@@ -168,7 +168,8 @@ class AccessedThenModifiedSet {
 			 Objects.equals(accessedInAtomic, other.accessedInAtomic)
 			 && Objects.equals(accessedThenModInAtomic, other.accessedThenModInAtomic)
 			 && Objects.equals(universe, other.universe)
-			 && Objects.equals(ptrAnalysis, other.ptrAnalysis)))
+			 && Objects.equals(ptrAnalysis, other
+					 .ptrAnalysis)))
 		{
 			return false;
 		}
