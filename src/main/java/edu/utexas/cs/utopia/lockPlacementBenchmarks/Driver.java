@@ -1,6 +1,26 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks;
 
-import soot.Body;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.LinkedList;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.microsoft.z3.Context;
+
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AccessedBeforeRelation;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockConstraintProblem;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OptimisticPointerAnalysis;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
 import soot.Modifier;
 import soot.NullType;
 import soot.Pack;
@@ -11,31 +31,10 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.SourceLocator;
 import soot.Transform;
-import soot.VoidType;
 import soot.jimple.JasminClass;
 import soot.jimple.Jimple;
 import soot.options.Options;
 import soot.util.JasminOutputStream;
-
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AccessedBeforeRelation;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OptimisticPointerAnalysis;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
 
 /**
  * Based on edu.utexas.cs.utopia.cfpchecker.Driver by kferles
@@ -143,8 +142,11 @@ public class Driver
 
         Instant start = Instant.now();
         
+        // TODO : make this a command line option, actually do an analysis
         // Get pointer analysis
         PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
+        // TODO : make these command line settings, with this default
+        int localCost = 1, globalCost = 2;
         
         // Adding our transformers!
         Pack jtpPack = packManager.getPack("jtp");     
@@ -198,9 +200,17 @@ public class Driver
         											   targetClass,
         											   lValueExtractor.getSharedLValues());
         	
-        	// TODO : Put alias relation here
-        	
         	// Build and solve our constraints
+        	log.debug("Building and solving lock constraint problem");
+        	LockConstraintProblem 
+        		lockProblem = new LockConstraintProblem(new Context(),
+									  					lValueExtractor.getSharedLValues(),
+														lValueExtractor.getLValuesAccessedIn(),
+														scopeCalc.getOutOfScope(),
+														accBefore.getAccessedBefore(),
+														ptrAnalysis,
+														localCost,
+														globalCost);
         	
         }
         
