@@ -23,7 +23,7 @@ BUILD_DIR=`realpath "build/"`;
 SOURCE_DIR=`realpath "."`;
 # where to leave jimple files
 OUT_DIR=`realpath "./modifiedClasses"`;
-PATH_TO_Z3=`realpath "../lib/com.microsoft.z3.jar"`;
+PATH_TO_Z3=`realpath "/usr/lib/"`;
 JAR=`realpath "../target/lockPlacementBenchmarks-0.0.1-SNAPSHOT.jar"`;
 
 # build jimple classpath
@@ -43,8 +43,9 @@ for targetFile in `find ${SOURCE_DIR} -type f -name "targets.txt"`; do
     CLASS_NAME=`cat ${targetFile}`;
     echo "** Running Ranjit's algorithm on ${CLASS_NAME}";
     # Assume ${JAVA_HOME} is set up correctly for this to work
-    java -Dorg.slf4j.simpleLogger.defaultLogLevel=${LOG_LEVEL} \
-         -Djava.library.path="${PATH_TO_Z3}" \
-         -jar "${JAR}" ${targetFile} -- -d ${OUT_DIR} -f jimple -cp ${JIMPLE_CP} -pp;
+    LD_LIBRARY_PATH="${PATH_TO_Z3}" \
+        java -Dorg.slf4j.simpleLogger.defaultLogLevel=${LOG_LEVEL} \
+             -Djava.library.path="${PATH_TO_Z3}" \
+             -jar "${JAR}" ${targetFile} -- -d ${OUT_DIR} -f jimple -cp ${JIMPLE_CP} -pp;
     echo "** Jimple file in directory ${OUT_DIR}"; echo
 done

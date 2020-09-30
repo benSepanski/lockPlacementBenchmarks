@@ -34,7 +34,7 @@ import com.microsoft.z3.Status;
 public class LockConstraintProblem {
 	private static Logger log = LoggerFactory.getLogger(LockConstraintProblem.class);
 	
-	private HashMap<LValueBox, LValueLock> lockAssignment;
+	private HashMap<LValueBox, LValueLock> lockAssignment = new HashMap<>();
 	private HashMap<LValueBox, Integer> lValIndex = new HashMap<>();
 
 	public HashMap<LValueBox, LValueLock> getLockAssignment() {

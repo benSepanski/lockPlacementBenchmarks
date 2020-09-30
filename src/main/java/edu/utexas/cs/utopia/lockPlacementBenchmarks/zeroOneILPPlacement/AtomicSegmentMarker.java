@@ -46,7 +46,7 @@ import soot.jimple.StaticFieldRef;
  */
 public class AtomicSegmentMarker extends BodyTransformer {
 	
-	private static final String lockManagerName = "$threadLocalTwoPhaseLockManager";
+	public static final String lockManagerName = "$threadLocalTwoPhaseLockManager";
 	private static final SootClass 
 		lockManagerClass = Scene.v().getSootClass(TwoPhaseLockManager.class.getName());
 	

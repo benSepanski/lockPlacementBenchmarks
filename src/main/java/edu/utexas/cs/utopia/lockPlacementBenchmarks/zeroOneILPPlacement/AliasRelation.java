@@ -18,7 +18,7 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
  * @author Ben_Sepanski
  *
  */
-public enum AliasRelation {
+enum AliasRelation {
 	MAY_ALIAS,
 	MUST_ALIAS,
 	NOT_ALIAS

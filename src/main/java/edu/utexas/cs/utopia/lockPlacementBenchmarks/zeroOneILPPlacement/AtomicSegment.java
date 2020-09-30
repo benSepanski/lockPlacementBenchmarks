@@ -18,7 +18,7 @@ import soot.Unit;
  * 
  * @author Ben_Sepanski
  */
-public class AtomicSegment {
+class AtomicSegment {
 	private Unit firstUnit, lastUnit;
 	
 	/**
