@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import jdk.internal.jline.internal.Log;
 import soot.Body;
 import soot.BodyTransformer;
 import soot.Local;
@@ -31,7 +32,7 @@ import soot.jimple.StaticFieldRef;
  * We assume the given class has at least one <clinit> method
  * 
  * Defines atomic segments as:
- * 		- The entire body of any non-constructor, non-static-initializer,
+ * 		- The entire body of any non-constructor, non-static,
  * 		   non-main method,
  *         excluding the identity statements and
  *         return statements
@@ -45,8 +46,11 @@ import soot.jimple.StaticFieldRef;
  * @author Ben_Sepanski
  */
 public class AtomicSegmentMarker extends BodyTransformer {
-	
+	// The name of the field which has the lock manager
 	public static final String lockManagerName = "$threadLocalTwoPhaseLockManager";
+	// Each method with atomic segments makes a local which is a reference
+	// to the lock manager. That local has the following name:
+	public static final String lockManagerLocalName = lockManagerName + "$localRep";
 	private static final SootClass 
 		lockManagerClass = Scene.v().getSootClass(TwoPhaseLockManager.class.getName());
 	
@@ -114,7 +118,7 @@ public class AtomicSegmentMarker extends BodyTransformer {
 		if(body.getMethod().getName().equals("<clinit>")) {
 			// Make a local lock manager
 			SootField lockManagerField = this.getLockManagerField(body);
-			Local newLockManagerLocal = Jimple.v().newLocal(lockManagerName + "Initializer",
+			Local newLockManagerLocal = Jimple.v().newLocal(lockManagerLocalName,
 															lockManagerField.getType());
 			RefType lockManagerRefType = soot.RefType.v(lockManagerField.getType().toString());
 			NewExpr localNewExpr = Jimple.v().newNewExpr(lockManagerRefType);
@@ -159,13 +163,15 @@ public class AtomicSegmentMarker extends BodyTransformer {
 			bodyAtomicSegs.add(atomicSegment);
 			atomicSegment = this.nextAtomicSegment(body, bodyAtomicSegs.get(index));
 		}
-		// map this body to its atomic segments
-		atomicSegments.put(body,  bodyAtomicSegs);
+		// map this body to its atomic segments if there are any
+		if(bodyAtomicSegs.size() > 0) {
+			atomicSegments.put(body,  bodyAtomicSegs);
+		}
 		
 		// Make a local variable and assign a reference to the lock manager
 		SootField lockManagerField = this.getLockManagerField(body);
 		assert(lockManagerField.isStatic());
-		Local lockManagerLocal = Jimple.v().newLocal(lockManagerName,
+		Local lockManagerLocal = Jimple.v().newLocal(lockManagerLocalName,
 													 lockManagerField.getType());
 		StaticFieldRef lockManagerFieldRef = Jimple.v().newStaticFieldRef(lockManagerField.makeRef());
 		AssignStmt lockManagerAssignmentToLocal = Jimple.v().newAssignStmt(lockManagerLocal,

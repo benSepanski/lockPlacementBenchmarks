@@ -14,6 +14,8 @@ import soot.Unit;
  * We also assume that no shared values are accessed in
  * a return statement.
  * 
+ * We assume the method is not static
+ * 
  * Does no error checking.
  * 
  * @author Ben_Sepanski

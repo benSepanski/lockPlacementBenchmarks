@@ -17,6 +17,7 @@ import com.microsoft.z3.Context;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AccessedBeforeRelation;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockConstraintProblem;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockInserter;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OptimisticPointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
@@ -124,14 +125,17 @@ public class Driver
         // Load relevant classes, set class in monitor file as applications
         log.debug("adding/loading classes to soot");
         // We will need to add lock managers to implement nested atomic segments
+        //
+        // We are loading at the BODIES level because we may need to modify
+        // classes to insert locks...
         Scene.v().addBasicClass("edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.TwoPhaseLockManager",
-        					SootClass.SIGNATURES);
+        					SootClass.BODIES);
         // We need these because we're working with explicit monitors
-        Scene.v().addBasicClass("java.util.concurrent.locks.ReentrantLock", SootClass.SIGNATURES);
-        Scene.v().addBasicClass("java.util.concurrent.locks.Condition", SootClass.SIGNATURES);
+        Scene.v().addBasicClass("java.util.concurrent.locks.ReentrantLock", SootClass.BODIES);
+        Scene.v().addBasicClass("java.util.concurrent.locks.Condition", SootClass.BODIES);
         // Now load application classes from the command line
         for(String className : cmdLine.getTargetClasses()) {
-        	SootClass targetClass = Scene.v().loadClass(className, SootClass.SIGNATURES);
+        	SootClass targetClass = Scene.v().loadClass(className, SootClass.BODIES);
         	targetClass.setApplicationClass();
         }
         Scene.v().loadNecessaryClasses();
@@ -147,6 +151,8 @@ public class Driver
         PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
         // TODO : make these command line settings, with this default
         int localCost = 1, globalCost = 2;
+        // TODO : make these command line settings
+        boolean logZ3 = true;
         
         // Adding our transformers!
         Pack jtpPack = packManager.getPack("jtp");     
@@ -210,8 +216,21 @@ public class Driver
 														accBefore.getAccessedBefore(),
 														ptrAnalysis,
 														localCost,
-														globalCost);
+														globalCost,
+														logZ3);
         	
+        	 // Used to insert locks
+        	log.debug("Inserting locks!");
+            LockInserter lockInsert = new LockInserter(lockProblem.getLockAssignment(),
+            										   atomicExtractor.getAtomicSegments(),
+            										   lValueExtractor.getLValuesAccessedIn(),
+            										   accBefore.getAccessedBefore());
+            Transform lockInsertT = new Transform("jtp.lockInsertion" + targetClass.getName(),
+            									  lockInsert);
+            jtpPack.add(lockInsertT);
+            for(SootMethod targetMethod : targetClass.getMethods()) {
+        		lockInsertT.apply(targetMethod.getActiveBody());
+        	}
         }
         
         // Print classes out to file

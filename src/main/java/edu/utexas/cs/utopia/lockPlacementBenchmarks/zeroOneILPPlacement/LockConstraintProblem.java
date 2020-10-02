@@ -16,6 +16,9 @@ import com.microsoft.z3.Model;
 import com.microsoft.z3.Solver;
 import com.microsoft.z3.Status;
 
+import soot.PrimType;
+import soot.jimple.ArrayRef;
+
 /**
  * Given
  * 	 - AccessedIn relation of lvalues to atomic segments
@@ -27,6 +30,18 @@ import com.microsoft.z3.Status;
  * Minimize lock conflict & number of locks (see Ranjit paper
  * https://dl.acm.org/doi/pdf/10.1145/1190215.1190260
  * )
+ *
+ * Note that from section 3.1: LValues
+ * "The
+ * back-end of our analysis augments each record with a system lock
+ * resource which is acquired and released with the associated locking
+ * primitives." In particular, primitive types have no local locks.
+ * We implement this by asserting no LValue is assigned to 
+ * a local lock of a primitive LValue  
+ * 
+ * We add the constraint that no lValue can be assigned
+ * a lock associated to an ArrayRef because... it's complicated
+ * and I don't totally know how to deal with it :(
  * 
  * @author Ben_Sepanski
  *
@@ -48,12 +63,18 @@ public class LockConstraintProblem {
 								 HashMap<LValueBox, HashSet<LValueBox>> accessedBefore,
 								 PointerAnalysis ptrAnalysis,
 								 int localCost,
-								 int globalCost) {
-		log.debug("Building constraints in z3");
+								 int globalCost,
+								 boolean logZ3) {
 		
 		// give each lValue an index
-		for(LValueBox lvb : lValues) lValIndex.put(lvb, lValIndex.size()); 		
+		for(LValueBox lvb : lValues) {
+			lValIndex.put(lvb, lValIndex.size());
+			if(log.isDebugEnabled() && logZ3) {
+				log.debug((lValIndex.size() - 1) + " <-> " + lvb.toString());
+			}
+		}
 
+		log.debug("Building lock vars and alternate lock vars");
 		// Build variables to hold our lock assignments and an
 		// alternative
 		BoolExpr localLockVars[][] = new BoolExpr[lValIndex.size()][lValIndex.size()],
@@ -69,7 +90,9 @@ public class LockConstraintProblem {
 				altGlobalLockVars[i][j] = ctx.mkBoolConst(getGlobalName(i, j, true));
 			}
 		}
+
 		// Build constraints and cost
+		log.debug("Building constraints in z3");
 		BoolExpr constraints = buildConstraints(ctx,
 												lValues,
 												accessedIn,
@@ -77,7 +100,8 @@ public class LockConstraintProblem {
 												accessedBefore,
 												ptrAnalysis,
 												localLockVars,
-												globalLockVars),
+												globalLockVars,
+												logZ3),
 				altConstraints = buildConstraints(ctx,
 												  lValues,
 												  accessedIn,
@@ -85,7 +109,8 @@ public class LockConstraintProblem {
 												  accessedBefore,
 												  ptrAnalysis,
 												  altLocalLockVars,
-												  altGlobalLockVars);
+												  altGlobalLockVars,
+												  false);
 		ArithExpr cost = buildCost(ctx,
 								   accessedIn,
 								   localCost,
@@ -125,6 +150,9 @@ public class LockConstraintProblem {
 		
 		// solve constraints
 		log.debug("Checking satisfiability");
+		if(log.isDebugEnabled() && logZ3) {
+			log.debug("Solver: \n" + solver.toString());
+		}
 		if(solver.check() == Status.UNKNOWN) {
 			throw new RuntimeException("0-1 ILP solve failed");
 		}
@@ -135,6 +163,11 @@ public class LockConstraintProblem {
 		// translate into lock placement
 		log.debug("Translating solution into lock assignment");
 		Model solution = solver.getModel();
+		if(log.isDebugEnabled() && logZ3) {
+			log.debug("Model : \n" + solution.toString());
+		}
+		HashMap<LValueBox, LValueLock> localLocks = new HashMap<>(),
+				globalLocks = new HashMap<>();
 		for(LValueBox lVal : lValues) {
 			int i = lValIndex.get(lVal);
 			for(LValueBox lockAssign : lValues) {
@@ -147,6 +180,10 @@ public class LockConstraintProblem {
 						throw new RuntimeException("lVal " + lVal.toString() +
 												   " assigned multiple locks");
 					}
+					//if(!localLocks.containsKey(lockAssign)) {
+					//	localLocks.put(lockAssign, new LValueLock(lockAssign, false));
+					//}
+					//lockAssignment.put(lVal, localLocks.get(lockAssign));
 					lockAssignment.put(lVal, new LValueLock(lockAssign, false));
 				}
 				if(globalIJ.getBoolValue().toInt() > 0) {
@@ -154,6 +191,10 @@ public class LockConstraintProblem {
 						throw new RuntimeException("lVal " + lVal.toString() +
 												   " assigned multiple locks");
 					}
+					//if(!globalLocks.containsKey(lockAssign)) {
+					//	globalLocks.put(lockAssign, new LValueLock(lockAssign, true));
+					//}
+					//lockAssignment.put(lVal, globalLocks.get(lockAssign));
 					lockAssignment.put(lVal, new LValueLock(lockAssign, true));
 				}
 			}
@@ -167,7 +208,8 @@ public class LockConstraintProblem {
 									  HashMap<LValueBox, HashSet<LValueBox>> accessedBefore,
 									  PointerAnalysis ptrAnalysis,
 									  BoolExpr localLockVars[][],
-									  BoolExpr globalLockVars[][]) {		
+									  BoolExpr globalLockVars[][],
+									  boolean logZ3) {		
 		// make a constraint that says each lVal must have a lock
 		BoolExpr atLeastOneLockSet = ctx.mkTrue();
 		for(int i = 0; i < lValIndex.size(); ++i) {
@@ -178,12 +220,47 @@ public class LockConstraintProblem {
 			atLeastOneLockSet = ctx.mkAnd(atLeastOneLockSet, atLeastOneLockFori);
 		}
 		BoolExpr constraints = atLeastOneLockSet;
+		if(log.isDebugEnabled() && logZ3) {
+			Solver debugSolv = ctx.mkSolver();
+			debugSolv.add(atLeastOneLockSet);
+			log.debug("At least one lock set: \n" + debugSolv.toString().replace("\n", "    \n"));
+		}
+		
+		// Primitive LValues do not have local locks, so code that into
+		// the constraints. 
+		// At the same time, make constraints that say no lval may be assigned 
+		// to an array reference as its lock
+		BoolExpr primitiveAndArrayHandler = ctx.mkTrue();
+		for(LValueBox lvb : lValues) {
+			if(lvb.getValue() instanceof ArrayRef) {
+				int j = lValIndex.get(lvb);
+				for(int i = 0; i < lValIndex.size(); ++i) {
+					primitiveAndArrayHandler = ctx.mkAnd(primitiveAndArrayHandler,
+														 ctx.mkNot(localLockVars[i][j]),
+														 ctx.mkNot(globalLockVars[i][j]));
+				}
+			}
+			else if(lvb.getValue().getType() instanceof PrimType) {
+				int j = lValIndex.get(lvb);
+				for(int i = 0; i < lValIndex.size(); ++i) {
+					primitiveAndArrayHandler = ctx.mkAnd(primitiveAndArrayHandler,
+										    			 ctx.mkNot(localLockVars[i][j]));
+				}
+			}
+		}
+		constraints = ctx.mkAnd(constraints, primitiveAndArrayHandler);
+		if(log.isDebugEnabled() && logZ3) {
+			Solver debugSolv = ctx.mkSolver();
+			debugSolv.add(primitiveAndArrayHandler);
+			log.debug("Primitives and array handling: \n" + debugSolv.toString().replace("\n", "    \n"));
+		}
 		
 		// Add constraints that say if two lValues are may-aliased
 		// they cannot be assigned local locks and must have the same
 		// global lock,
 		// and if two lValues are
 		// MUST-aliased, they must have identical locks
+		BoolExpr aliasConstraints = ctx.mkTrue();
 		HashSet<LValueBox> seen = new HashSet<>();
 		for(LValueBox lvb1 : lValues) {
 			seen.add(lvb1);
@@ -198,7 +275,7 @@ public class LockConstraintProblem {
 					for(int j = 0; j < lValIndex.size(); ++j) {
 						BoolExpr sameLoc = ctx.mkIff(localLockVars[i1][j], localLockVars[i2][j]);
 						BoolExpr sameGlob = ctx.mkIff(globalLockVars[i1][j], globalLockVars[i2][j]);
-						constraints = ctx.mkAnd(constraints, sameLoc, sameGlob);
+						aliasConstraints = ctx.mkAnd(aliasConstraints, sameLoc, sameGlob);
 					}
 					break;
 				}
@@ -211,7 +288,7 @@ public class LockConstraintProblem {
 						BoolExpr notLoc = ctx.mkNot(localLockVars[i1][j]);
 						notLoc = ctx.mkAnd(ctx.mkNot(localLockVars[i2][j]));
 						BoolExpr sameGlob = ctx.mkIff(globalLockVars[i1][j], globalLockVars[i2][j]);
-						constraints = ctx.mkAnd(constraints, notLoc, sameGlob);
+						aliasConstraints = ctx.mkAnd(aliasConstraints, notLoc, sameGlob);
 					}
 					break;
 				}
@@ -219,8 +296,15 @@ public class LockConstraintProblem {
 				}
 			}
 		}
+		constraints = ctx.mkAnd(constraints, aliasConstraints);
+		if(log.isDebugEnabled() && logZ3) {
+			Solver debugSolv = ctx.mkSolver();
+			debugSolv.add(aliasConstraints);
+			log.debug("Alias constraints: \n" + debugSolv.toString().replace("\n", "    \n"));
+		}
 		
 		// Make sure local locks are in scope:
+		BoolExpr scopeConstraints = ctx.mkTrue();
 		for(AtomicSegment atomicSeg : accessedIn.keySet()) {
 			HashSet<LValueBox> outOfScope = notInScope.get(atomicSeg);
 			ArrayList<Integer> outOfScopeNdx = new ArrayList<>();
@@ -232,19 +316,32 @@ public class LockConstraintProblem {
 			for(LValueBox lvb : accessedIn.get(atomicSeg)) {
 				int i = lValIndex.get(lvb);
 				for(int j : outOfScopeNdx) {
-					constraints = ctx.mkAnd(constraints, ctx.mkNot(localLockVars[i][j]));
+					scopeConstraints = ctx.mkAnd(scopeConstraints, ctx.mkNot(localLockVars[i][j]));
 				}
 			}
 		}
+		constraints = ctx.mkAnd(constraints, scopeConstraints);
+		if(log.isDebugEnabled() && logZ3) {
+			Solver debugSolv = ctx.mkSolver();
+			debugSolv.add(scopeConstraints);
+			log.debug("Scope constraints: \n" + debugSolv.toString().replace("\n", "    \n"));
+		}
 		
 		// Add ordering constraints
+		BoolExpr orderingConstraints = ctx.mkTrue();
 		for(LValueBox lvb1 : lValues) {
 			int i = lValIndex.get(lvb1);
 			// lvb1 accessedBefore lvb2, so lvb1 cannot be assigned lvb2 local lock
 			for(LValueBox lvb2 : accessedBefore.get(lvb1)) {
 				int j = lValIndex.get(lvb2);
-				constraints = ctx.mkAnd(constraints, ctx.mkNot(localLockVars[i][j]));
+				orderingConstraints = ctx.mkAnd(orderingConstraints, ctx.mkNot(localLockVars[i][j]));
 			}
+		}
+		constraints = ctx.mkAnd(constraints, orderingConstraints);
+		if(log.isDebugEnabled() && logZ3) {
+			Solver debugSolv = ctx.mkSolver();
+			debugSolv.add(orderingConstraints);
+			log.debug("Ordering constraints: \n" + debugSolv.toString().replace("\n", "    \n"));
 		}
 		
 		return constraints;
@@ -258,9 +355,9 @@ public class LockConstraintProblem {
 							    BoolExpr globalLockVars[][]) {
 		IntExpr localCostExp = ctx.mkInt(localCost);
 		IntExpr globalCostExp = ctx.mkInt(globalCost);
-		
-		// cost += numLocks
-		ArithExpr cost = ctx.mkInt(0);
+
+		// numLocks
+		ArithExpr numLocks = ctx.mkInt(0);
 		for(int j = 0; j < lValIndex.size(); ++j) {
 			BoolExpr someiAssignedToLocj = ctx.mkFalse(),
 				someiAssignedToGlobj = ctx.mkFalse();
@@ -268,11 +365,13 @@ public class LockConstraintProblem {
 				someiAssignedToLocj = ctx.mkOr(someiAssignedToLocj, localLockVars[i][j]);
 				someiAssignedToGlobj = ctx.mkOr(someiAssignedToGlobj, globalLockVars[i][j]);
 			}
-			cost = ctx.mkAdd(cost, 
-							 boolToInt(ctx, someiAssignedToLocj),
-							 boolToInt(ctx, someiAssignedToLocj));
+			numLocks = ctx.mkAdd(numLocks, 
+							     boolToInt(ctx, someiAssignedToLocj),
+								 boolToInt(ctx, someiAssignedToGlobj));
 		}
-		// cost += conflict(lock assignment) (cost(i,j) * do they share a lock for all i<=j)
+		
+		// conflict(lock assignment) (cost(i,j) * do they share a lock for all i<=j)
+		ArithExpr conflict = ctx.mkInt(0);
 		HashSet<AtomicSegment> seen = new HashSet<>();
 		// get atomic segment 1
 		for(AtomicSegment atomicSeg1 : accessedIn.keySet()) {
@@ -281,7 +380,7 @@ public class LockConstraintProblem {
 			for(AtomicSegment atomicSeg2 : accessedIn.keySet()) {
 				if(seen.contains(atomicSeg2)) continue;
 				HashSet<LValueBox> accessed2 = accessedIn.get(atomicSeg2);
-				// Do seg1 and seg2 share any locks k?
+				// Do seg1 and seg2 share any locks?
 				BoolExpr shareLocLock = ctx.mkFalse(),
 						 shareGlobLock = ctx.mkFalse();
 				for(int k = 0; k < lValIndex.size(); ++k) {
@@ -307,13 +406,14 @@ public class LockConstraintProblem {
 					shareGlobLock = ctx.mkOr(shareGlobLock, kGlobLockBoth);
 				}
 				// Add conflict of seg1, seg2 to cost
-				cost = ctx.mkAdd(cost,
+				conflict = ctx.mkAdd(conflict,
 								 ctx.mkMul(localCostExp, boolToInt(ctx, shareLocLock)),
 								 ctx.mkMul(globalCostExp, boolToInt(ctx, shareGlobLock)));
 			}
 			seen.add(atomicSeg1);
 		}
 		
+		ArithExpr cost = ctx.mkAdd(numLocks, conflict);
 		return cost;
 	}
 	

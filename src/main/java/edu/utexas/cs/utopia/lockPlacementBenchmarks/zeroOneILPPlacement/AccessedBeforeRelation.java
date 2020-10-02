@@ -54,9 +54,12 @@ public class AccessedBeforeRelation {
 		log.debug("Building accessedBefore relation from SCCs");
 		accessedBefore = new HashMap<LValueBox, HashSet<LValueBox>>();
 		for(HashSet<LValueBox> scc : reverseTopoSCCs) {
-			//all the sccs after/including this scc (in the toposort)
 			HashSet<LValueBox> descendants = new HashSet<LValueBox>();
-			descendants.addAll(scc);
+			// If a non-trivial scc, add it
+			if(scc.size() > 1) {
+				descendants.addAll(scc);
+			}
+			//all the sccs after this scc (in the toposort)
 			descendants.addAll(accessedBefore.keySet());	
 			// point lvalues to descendants
 			for(LValueBox lvb : scc) {

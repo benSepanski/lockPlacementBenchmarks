@@ -13,6 +13,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Objects;
+
 import soot.Body;
 import soot.BodyTransformer;
 import soot.Local;
@@ -21,12 +23,14 @@ import soot.RefType;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootField;
+import soot.SootFieldRef;
 import soot.SootMethod;
 import soot.SootMethodRef;
 import soot.Unit;
 import soot.Value;
 import soot.jimple.AssignStmt;
 import soot.jimple.InstanceFieldRef;
+import soot.jimple.InvokeExpr;
 import soot.jimple.InvokeStmt;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
@@ -43,116 +47,22 @@ import soot.jimple.Stmt;
  */
 public class LockInserter extends BodyTransformer {
 	private static Logger log = LoggerFactory.getLogger(LockInserter.class);
+	// We want this to be the lock manager class
 	private static final SootClass 
-		lockClass = Scene.v().getSootClass("java.util.concurrent.locks.ReentrantLock");
-	private static final SootMethodRef
-		lockInit = lockClass.getMethod("void <init>()").makeRef();
+		lockManagerClass = Scene.v().getSootClass(TwoPhaseLockManager.class.getName());
+	private static final SootMethod
+		obtainLockMethod = lockManagerClass.getMethod("void obtainLock(java.util.concurrent.locks.ReentrantLock)");
 	
+	// Locks are ordered to avoid deadlock
 	private HashMap<LValueBox, Integer> lockOrder = new HashMap<>();
+	// order locks according to lock order
 	private Comparator<LValueLock> lockComparator;
+	// the lock assignment we will compute
 	private HashMap<LValueBox, LValueLock> lockAssignment;
+	// the atomic segments we are given
 	private HashMap<Body, ArrayList<AtomicSegment>> atomicSegments;
+	// the set of accessedIn relations
 	private HashMap<AtomicSegment, HashSet<LValueBox>> accessedIn;
-	
-	/**
-	 * Get lock name for a soot class
-	 * 
-	 * @param cls
-	 * @param isGlobal
-	 * @return
-	 */
-	private String getLockName(SootClass cls, boolean isGlobal) {
-		String name = "$REENTRANTLOCK_RANJITsALGORITHM" + cls.getName().replace(".", "$");
-		if(isGlobal) {
-			return "$GLOBAL" + name;
-		}
-		return "$LOCAL" + name;
-	}
-	
-	private void makeLock(SootClass cls, boolean isGlobal) {
-		String fieldName = getLockName(cls, isGlobal);
-		RefType fieldType = lockClass.getType();
-		// Make the field if it does not already have one
-		if(!cls.declaresField(fieldName, fieldType)) {
-			// load as application class if not already done
-			if(!cls.isApplicationClass()) {
-				log.debug("Loading " + cls.getName() + " as application class");
-				cls.setApplicationClass();
-				Scene.v().loadNecessaryClasses();
-			}
-			// Add a public lock field, static for a global lock
-			int mod = Modifier.PUBLIC;
-			if(isGlobal) mod = mod | Modifier.STATIC;  // global locks are static
-			SootField lockField = new SootField(fieldName, fieldType, mod);
-			cls.addField(lockField);
-			String initName = isGlobal ? "<clinit>" : "<init>";
-			// In global case, make sure cls has a clinit method
-        	// https://ptolemy.berkeley.edu/ptolemyII/ptII10.0/ptII10.0.1/ptolemy/copernicus/kernel/SootUtilities.java
-			if(isGlobal) {
-	        	if(!cls.declaresMethodByName("<clinit>")) {
-	        		@SuppressWarnings({ "rawtypes", "unchecked" })
-					SootMethod emptyClinit = new SootMethod("<clinit>",
-			        										new LinkedList(),
-			        										NullType.v(),
-			        										Modifier.PUBLIC);
-	        		emptyClinit.setActiveBody(Jimple.v().newBody(emptyClinit));
-	        		cls.addMethod(emptyClinit);
-	        	}
-			}
-			// In local case, assert that it has a constructor
-			else {
-				if(!cls.declaresMethodByName("<init>")) {
-					throw new RuntimeException("Attempting to insert local lock " +
-											   " attribute into " + cls.getName() +
-											   " which has no constructor");
-				}
-			}
-        	// Initialize this new field in all (cl)init methods
-        	for(SootMethod meth : cls.getMethods()) {
-        		if(meth.getName().equals(initName)) {
-        			// Make a local reentrant lock and initialize it
-        			Local localReentLock = Jimple.v().newLocal(fieldName + "Local",
-        													   fieldType);
-        			AssignStmt localReentLockNew = Jimple.v()
-        				.newAssignStmt(localReentLock, Jimple.v().newNewExpr(fieldType));
-        			SpecialInvokeExpr initExpr = Jimple.v()
-        				.newSpecialInvokeExpr(localReentLock, lockInit);
-        			InvokeStmt initLocalReentLock = Jimple.v().newInvokeStmt(initExpr);
-        			// assign the field to that initialized local
-        			AssignStmt assignField;
-        			if(isGlobal) {
-	        			StaticFieldRef globalLockRef = Jimple.v()
-	        				.newStaticFieldRef(lockField.makeRef());
-	        			assignField = Jimple.v().newAssignStmt(globalLockRef, localReentLock);
-        			}
-        			else {
-        				InstanceFieldRef localLockRef = Jimple.v()
-        					.newInstanceFieldRef(Jimple.v().newThisRef(cls.getType()),
-        									     lockField.makeRef());
-        				assignField = Jimple.v().newAssignStmt(localLockRef, localReentLock);
-        			}
-        			// Now add the local and these statements to the method body
-        			List<Stmt> toInsert = Arrays.asList(localReentLockNew,
-								   				        initLocalReentLock,
-								   				        assignField);
-        			JimpleBody body = (JimpleBody) meth.getActiveBody();
-        			body.getLocals().add(localReentLock);
-        			if(body.getUnits().size() > 0) {
-        				Unit firstNonID = body.getFirstNonIdentityStmt();
-        				body.getUnits().insertBefore(toInsert, firstNonID);
-        			}
-        			else {
-        				for(Stmt s : toInsert) body.getUnits().add(s);
-        			}
-        		}
-        	}
-		}
-	}
-	
-	private SootField getLock(SootClass cls, boolean isGlobal) {
-		makeLock(cls, isGlobal);
-		return cls.getField(getLockName(cls, isGlobal), lockClass.getType());
-	}
 	
 	/**
 	 * Use a DFS to build a lock ordering such that
@@ -210,17 +120,74 @@ public class LockInserter extends BodyTransformer {
 	@Override
 	protected void internalTransform(Body b, String phaseName, Map<String, String> options) {
 		// If no atomic segments, there is nothing to insert!
-		if(atomicSegments.containsKey(b)) return;
-		// Otherwise, look at each atomic seg
+		if(!atomicSegments.containsKey(b)) return;
+		
+		log.debug("Inserting locks into " +
+				  b.getMethod().getDeclaringClass().getName() + "." +
+				  b.getMethod().getName());
+		/// Get the local which has the lock manager //////////////////////////
+		Local lockManager = null;
+		for(Local loc : b.getLocals()) {
+			if(loc.getName().equals(AtomicSegmentMarker.lockManagerLocalName)) {
+				if(lockManager != null) {
+					throw new RuntimeException("Multiple locals of name " +
+											   loc.getName() + " in method " +
+											   b.getMethod().getName());
+				}
+				lockManager = loc;
+			}
+		}
+		if(lockManager == null) {
+			throw new RuntimeException("No local of name " +
+									   AtomicSegmentMarker.lockManagerLocalName +
+									   " in method with atomic segments "+
+									   b.getMethod().getName());
+		}
+		assert(Objects.equal(Scene.v().getSootClass(lockManager.getType().toString()),
+							 lockManagerClass));
+		///////////////////////////////////////////////////////////////////////
+		
+		/// Obtain locks at beginning of each atomic seg //////////////////////
 		for(AtomicSegment atomicSeg : atomicSegments.get(b)) {
-			ArrayList<LValueLock> neededLocks = new ArrayList<>();
+			// Get all the locks we need in order
+			HashSet<LValueLock> neededLocks = new HashSet<>();
 			for(LValueBox lVal : accessedIn.get(atomicSeg)) {
 				neededLocks.add(lockAssignment.get(lVal));
 			}
-			neededLocks.sort(lockComparator);
-			// TODO : make local lock manager name public
-			//Local lockManager = b.getLocals().get
+			ArrayList<LValueLock> orderedLocks = new ArrayList<LValueLock>(neededLocks);
+			orderedLocks.sort(lockComparator);
+			// Invocations can only accept locals: https://mailman.cs.mcgill.ca/pipermail/soot-list/2010-April/002938.html
+			// So we need to store each lock in some local
+			Local localReentrantLockVar = Jimple.v().newLocal("$localReentrantLockVar",
+															  LValueLock.lockClass.getType());
+			b.getLocals().add(localReentrantLockVar);
+			// Make statements to obtain each lock
+			List<Unit> lockObtainStmts = new ArrayList<Unit>();
+			for(LValueLock lock : orderedLocks) {
+				// Get a reference to the field
+				SootFieldRef lockFieldRef = lock.createOrGetLockField().makeRef();
+				Value lockVal;
+				if(lock.isGlobal()) {
+					lockVal = Jimple.v().newStaticFieldRef(lockFieldRef);
+				}
+				else {
+					lockVal = Jimple.v().newInstanceFieldRef(lock.getLVal().getValue(),
+															 lockFieldRef);
+				}
+				// Store the lock field in our localReentrantLockVar iable
+				AssignStmt storeInLoc = Jimple.v()
+					.newAssignStmt(localReentrantLockVar, lockVal);
+				lockObtainStmts.add(storeInLoc);
+				// Obtain the lock
+				InvokeExpr obtainLock = Jimple.v().newVirtualInvokeExpr(lockManager,
+																		obtainLockMethod.makeRef(),
+																		localReentrantLockVar
+																		);
+				lockObtainStmts.add(Jimple.v().newInvokeStmt(obtainLock));
+			}
+			b.getUnits().insertBefore(lockObtainStmts, atomicSeg.getFirstUnit());
 		}
+		///////////////////////////////////////////////////////////////////////
 	}
 
 }
