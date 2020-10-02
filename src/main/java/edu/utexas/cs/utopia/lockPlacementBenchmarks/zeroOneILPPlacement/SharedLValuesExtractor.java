@@ -13,17 +13,9 @@ import soot.Body;
 import soot.Local;
 import soot.PrimType;
 import soot.Unit;
-import soot.Value;
 import soot.ValueBox;
-import soot.jimple.AbstractJimpleValueSwitch;
-import soot.jimple.ArrayRef;
-import soot.jimple.InstanceFieldRef;
 import soot.jimple.JimpleBody;
 import soot.jimple.ParameterRef;
-import soot.jimple.StaticFieldRef;
-import soot.jimple.ThisRef;
-import soot.toolkits.graph.ExceptionalUnitGraph;
-import soot.toolkits.scalar.CombinedDUAnalysis;
 
 /**
  * Extract (possibly) shared LValues

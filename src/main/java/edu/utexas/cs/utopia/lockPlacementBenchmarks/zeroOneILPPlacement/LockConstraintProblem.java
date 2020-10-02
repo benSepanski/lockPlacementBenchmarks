@@ -166,6 +166,7 @@ public class LockConstraintProblem {
 		if(log.isDebugEnabled() && logZ3) {
 			log.debug("Model : \n" + solution.toString());
 		}
+		// TODO : Do i really need these maps to ensure uniqueness of global locks?
 		HashMap<LValueBox, LValueLock> localLocks = new HashMap<>(),
 				globalLocks = new HashMap<>();
 		for(LValueBox lVal : lValues) {
@@ -180,22 +181,22 @@ public class LockConstraintProblem {
 						throw new RuntimeException("lVal " + lVal.toString() +
 												   " assigned multiple locks");
 					}
-					//if(!localLocks.containsKey(lockAssign)) {
-					//	localLocks.put(lockAssign, new LValueLock(lockAssign, false));
-					//}
-					//lockAssignment.put(lVal, localLocks.get(lockAssign));
-					lockAssignment.put(lVal, new LValueLock(lockAssign, false));
+					if(!localLocks.containsKey(lockAssign)) {
+						localLocks.put(lockAssign, new LValueLock(lockAssign, false));
+					}
+					lockAssignment.put(lVal, localLocks.get(lockAssign));
+					//lockAssignment.put(lVal, new LValueLock(lockAssign, false));
 				}
 				if(globalIJ.getBoolValue().toInt() > 0) {
 					if(lockAssignment.containsKey(lVal)) {
 						throw new RuntimeException("lVal " + lVal.toString() +
 												   " assigned multiple locks");
 					}
-					//if(!globalLocks.containsKey(lockAssign)) {
-					//	globalLocks.put(lockAssign, new LValueLock(lockAssign, true));
-					//}
-					//lockAssignment.put(lVal, globalLocks.get(lockAssign));
-					lockAssignment.put(lVal, new LValueLock(lockAssign, true));
+					if(!globalLocks.containsKey(lockAssign)) {
+						globalLocks.put(lockAssign, new LValueLock(lockAssign, true));
+					}
+					lockAssignment.put(lVal, globalLocks.get(lockAssign));
+					//lockAssignment.put(lVal, new LValueLock(lockAssign, true));
 				}
 			}
 		}

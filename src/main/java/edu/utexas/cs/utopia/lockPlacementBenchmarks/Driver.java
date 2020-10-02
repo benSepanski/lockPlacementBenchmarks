@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedList;
 
 import org.slf4j.Logger;
@@ -47,6 +48,7 @@ import soot.util.JasminOutputStream;
 public class Driver
 {
 	private static Logger log = LoggerFactory.getLogger(Driver.class);
+	private static HashSet<SootClass> classesToWrite = new HashSet<>();
 	
 	/**
 	 * Get index before first soot argument
@@ -231,13 +233,13 @@ public class Driver
             for(SootMethod targetMethod : targetClass.getMethods()) {
         		lockInsertT.apply(targetMethod.getActiveBody());
         	}
+            Driver.addClassToWrite(targetClass);
         }
         
         // Print classes out to file
         // Based on edu.utexas.cs.utopia.expresso.Driver
         log.debug("Writing transformed classes to files");
-        for(String className : cmdLine.getTargetClasses()) {
-        	SootClass targetClass = Scene.v().getSootClass(className);
+        for(SootClass targetClass : classesToWrite) {
 	        if (cmdLineOutFormat == Options.output_format_class)
 	        {
 	            String fileName = SourceLocator.v().getFileNameFor(targetClass, Options.output_format_class);
@@ -271,5 +273,13 @@ public class Driver
         
         Instant end = Instant.now();
         System.out.println("Total exec: " + Duration.between(start, end));
+    }
+    
+    /**
+     * If we modified cls, we will want to write it out
+     * @param cls
+     */
+    public static void addClassToWrite(SootClass cls) {
+    	classesToWrite.add(cls);
     }
 }

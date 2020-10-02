@@ -17,7 +17,6 @@ import soot.jimple.InvokeStmt;
 import soot.toolkits.graph.BriefUnitGraph;
 import soot.toolkits.scalar.ArrayPackedSet;
 import soot.toolkits.scalar.CollectionFlowUniverse;
-import soot.toolkits.scalar.FlowSet;
 import soot.toolkits.scalar.FlowUniverse;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 
