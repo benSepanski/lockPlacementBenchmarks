@@ -96,16 +96,14 @@ class AccessedBeforeRelationOnBody extends ForwardFlowAnalysis<Unit, AccessedThe
 		// Otherwise, we are inside an atomic segment.
 		// Copy in into out
 		in.copy(out);
-		// Look at use to record what gets accessed
-		HashSet<LValueBox> useBoxes = LValueBox.getAllLValues(d.getUseBoxes());
-		useBoxes.retainAll(sharedLValues);
-		out.recordAccess(useBoxes, accessedBefore);
+		// Look at use and def to record what gets accessed
+		HashSet<LValueBox> useAndDefBoxes = LValueBox.getAllLValues(d.getUseAnDefBoxes());
+		useAndDefBoxes.retainAll(sharedLValues);
+		out.recordAccess(useAndDefBoxes, accessedBefore);
 		// Look at defs to record what might get modified
 		HashSet<LValueBox> defBoxes = LValueBox.getAllLValues(d.getDefBoxes());
 		defBoxes.retainAll(sharedLValues);
 		out.recordPossibleMod(defBoxes);
-		// defs were accessed during modification, record that
-		out.recordAccess(defBoxes, accessedBefore);
 	}
 
 	/**

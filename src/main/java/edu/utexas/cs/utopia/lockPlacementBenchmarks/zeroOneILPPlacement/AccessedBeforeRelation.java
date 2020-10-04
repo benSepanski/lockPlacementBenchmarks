@@ -14,15 +14,39 @@ import org.slf4j.LoggerFactory;
 import soot.SootClass;
 import soot.SootMethod;
 
+/**
+ * Builds an accessed before relation.
+ * 
+ * We say two LValues v1, v2 if there
+ * exists a path in an atomic section where 
+ * 		v1 is accessed
+ * 	    v1 is possibly modified
+ * 		v2 is accessed
+ * then we say v1 accessedBefore v2.
+ * 
+ * This induces a graph v1 -> v2 iff v1 accessedBefore v2.
+ * 
+ * Topologically sort this graph, and define
+ * v1 TopoAccessedBefore v2
+ * iff 
+ * 		v1 is in a nontrivial SCC AND one of the following hold:
+ *      	v2 is in the same nontrivial SCC
+ *      	v2 is in an SCC succeeding the SCC of v1 in the topological sort
+ *      
+ * See https://dl.acm.org/doi/pdf/10.1145/1190215.1190260 section 3.3
+ * 
+ * @author Ben_Sepanski
+ *
+ */
 public class AccessedBeforeRelation {
 	private static Logger log = LoggerFactory.getLogger(AccessedBeforeRelation.class);
 	private HashMap<LValueBox, HashSet<LValueBox>> accessedBefore;
 	
 	/**
-	 * Get a map from each LValueBox v to {w | v accessedBefore w}
+	 * Get a map from each LValueBox v to {w | v TopoAccessedBefore w}
 	 * @return
 	 */
-	public HashMap<LValueBox, HashSet<LValueBox>> getAccessedBefore() {
+	public HashMap<LValueBox, HashSet<LValueBox>> getTopoAccessedBefore() {
 		return accessedBefore;
 	}
 	
@@ -54,12 +78,13 @@ public class AccessedBeforeRelation {
 		accessedBefore = new HashMap<LValueBox, HashSet<LValueBox>>();
 		for(HashSet<LValueBox> scc : reverseTopoSCCs) {
 			HashSet<LValueBox> descendants = new HashSet<LValueBox>();
-			// If a non-trivial scc, add it
+			// If a non-trivial scc
 			if(scc.size() > 1) {
+				// add the scc
 				descendants.addAll(scc);
+				//all the sccs after this scc (in the toposort)
+				descendants.addAll(accessedBefore.keySet());	
 			}
-			//all the sccs after this scc (in the toposort)
-			descendants.addAll(accessedBefore.keySet());	
 			// point lvalues to descendants
 			for(LValueBox lvb : scc) {
 				accessedBefore.put(lvb, descendants);

@@ -215,7 +215,7 @@ public class Driver
 									  					lValueExtractor.getSharedLValues(),
 														lValueExtractor.getLValuesAccessedIn(),
 														scopeCalc.getOutOfScope(),
-														accBefore.getAccessedBefore(),
+														accBefore.getTopoAccessedBefore(),
 														ptrAnalysis,
 														localCost,
 														globalCost,
@@ -226,7 +226,7 @@ public class Driver
             LockInserter lockInsert = new LockInserter(lockProblem.getLockAssignment(),
             										   atomicExtractor.getAtomicSegments(),
             										   lValueExtractor.getLValuesAccessedIn(),
-            										   accBefore.getAccessedBefore());
+            										   accBefore.getTopoAccessedBefore());
             Transform lockInsertT = new Transform("jtp.lockInsertion" + targetClass.getName(),
             									  lockInsert);
             jtpPack.add(lockInsertT);
