@@ -40,14 +40,14 @@ import soot.SootMethod;
  */
 public class AccessedBeforeRelation {
 	private static Logger log = LoggerFactory.getLogger(AccessedBeforeRelation.class);
-	private HashMap<LValueBox, HashSet<LValueBox>> accessedBefore;
+	private HashMap<LValueBox, HashSet<LValueBox>> topoAccessedBefore;
 	
 	/**
 	 * Get a map from each LValueBox v to {w | v TopoAccessedBefore w}
 	 * @return
 	 */
 	public HashMap<LValueBox, HashSet<LValueBox>> getTopoAccessedBefore() {
-		return accessedBefore;
+		return topoAccessedBefore;
 	}
 	
 	public AccessedBeforeRelation(PointerAnalysis ptrAnalysis,
@@ -75,7 +75,7 @@ public class AccessedBeforeRelation {
 		ArrayList<HashSet<LValueBox>> reverseTopoSCCs = tarjans.getReverseTopoSCCs();
 		
 		log.debug("Building accessedBefore relation from SCCs");
-		accessedBefore = new HashMap<LValueBox, HashSet<LValueBox>>();
+		topoAccessedBefore = new HashMap<LValueBox, HashSet<LValueBox>>();
 		for(HashSet<LValueBox> scc : reverseTopoSCCs) {
 			HashSet<LValueBox> descendants = new HashSet<LValueBox>();
 			// If a non-trivial scc
@@ -83,11 +83,11 @@ public class AccessedBeforeRelation {
 				// add the scc
 				descendants.addAll(scc);
 				//all the sccs after this scc (in the toposort)
-				descendants.addAll(accessedBefore.keySet());	
+				descendants.addAll(topoAccessedBefore.keySet());	
 			}
 			// point lvalues to descendants
 			for(LValueBox lvb : scc) {
-				accessedBefore.put(lvb, descendants);
+				topoAccessedBefore.put(lvb, descendants);
 			}
 		}
 	}

@@ -90,7 +90,6 @@ public class SharedLValuesExtractor {
 			while(unitsInSeg.hasNext()) {
 				valueBoxesInSeg.addAll(unitsInSeg.next().getUseAndDefBoxes());
 			}
-			System.out.println(valueBoxesInSeg);
 			HashSet<LValueBox> usedLVals = LValueBox.getAllLValues(valueBoxesInSeg);
 			// gather used lvals
 			HashSet<LValueBox> usedSharedLVals = new HashSet<>();
@@ -112,11 +111,13 @@ public class SharedLValuesExtractor {
 					}
 				}
 				usedSharedLVals.add(lvb);
-				System.out.println("atomic seg in " + b.getMethod().getName() + " has shared lValue "
-								   + lvb.getValue().toString());
 			}
 			// associate used shared LValues with this atomic segment, and
 			// add them to the set of shared LValues
+			if(log.isDebugEnabled()) {
+				log.debug("Atomic segment in " + b.getMethod().getName() + 
+						  " has shared lvalues " + usedSharedLVals);
+			}
 			atomicSegmentToAccessedLValues.put(atomicSeg, usedSharedLVals);
 			sharedLValues.addAll(usedSharedLVals);
 		}

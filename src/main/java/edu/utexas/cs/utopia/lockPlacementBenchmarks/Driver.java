@@ -151,10 +151,9 @@ public class Driver
         // TODO : make this a command line option, actually do an analysis
         // Get pointer analysis
         PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
-        // TODO : make these command line settings, with this default
-        int localCost = 1, globalCost = 2;
-        // TODO : make these command line settings
-        boolean logZ3 = true;
+        int localCost = cmdLine.getLocalCost(),
+        	globalCost = cmdLine.getGlobalCost();
+        boolean logZ3 = cmdLine.getDebugZ3();
         
         // Adding our transformers!
         Pack jtpPack = packManager.getPack("jtp");     

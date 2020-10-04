@@ -13,7 +13,10 @@ import java.util.ArrayList;
  */
 public class CmdLine
 {
-    private boolean isHelp = false;
+    private int localCost = 1;
+    private int globalCost = 2;
+    private boolean debugZ3 = false;
+	private boolean isHelp = false;
     private ArrayList<String> targetClasses = new ArrayList<String>();
     
     public String usage()
@@ -21,8 +24,11 @@ public class CmdLine
         StringBuilder rv = new StringBuilder();
 
         rv.append("java -jar lockPlacementBenchmarks.jar targetsFile <monitorClassName> -- [soot-options]\n")
-          .append("targetsFile          text file of of target class names, one on each line\n")
-          .append("-h, --help:          print this message and exit\n");
+          .append("targetsFile                  text file of of target class names, one on each line\n")
+          .append("-lc, -localCost localCost    An integer to weight the conflict from a local lock, default 1\n")
+          .append("-gc, -globalCost globalCost  An integer to weight the conflict from a global lock, default 2\n")
+          .append("-debugZ3                     log the Z3 formula at the debug level")
+          .append("-h, --help:                  print this message and exit\n");
 
         return rv.toString();
     }
@@ -32,7 +38,7 @@ public class CmdLine
         String parseError = null;
         
         if(args.length == 0) {
-        	parseError = "Missing monitorsFile\n";
+        	parseError = "Missing targetsFile\n";
         }
         else {
         	try (BufferedReader reader = Files.newBufferedReader(Paths.get(args[0]))) {
@@ -49,11 +55,25 @@ public class CmdLine
         }
 
         parseLoop:
-        for (int i = 1, e = args.length; i < e; )
+        for (int i = 1; i < args.length; )
         {
-            switch (args[i])
+        	switch (args[i])
             {
-                case "-h":
+            	case "-lc":
+            	case "-localCost":
+            		localCost = Integer.parseInt(args[++i]);
+            		++i;
+            		break;
+            	case "-gc":
+            	case "-globalCost":
+            		globalCost = Integer.parseInt(args[++i]);
+            		++i;
+            		break;
+            	case "-debugZ3":
+            		debugZ3 = true;
+            		++i;
+            		break;
+            	case "-h":
                 case "--help":
                     isHelp = true;
                     break parseLoop;
@@ -74,4 +94,25 @@ public class CmdLine
     {
         return isHelp;
     }
+
+    /**
+     * @return the localCost
+     */
+	public int getLocalCost() {
+		return localCost;
+	}
+
+	/**
+	 * @return the globalCost
+	 */
+	public int getGlobalCost() {
+		return globalCost;
+	}
+
+	/**
+	 * @return true iff debugZ3 is set
+	 */
+	public boolean getDebugZ3() {
+		return debugZ3;
+	}
 }
