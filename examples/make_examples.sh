@@ -1,18 +1,36 @@
 #!/usr/bin/env bash
 
-# usage: . make_examples.sh <build?>
-# where if build? is y/yes we call mvn package, and OW do not
+# usage: . make_examples.sh -b/--build -dz/--debugz3
+# where if build we call mvn package, and OW do not
+# where if debugz3 we set LOG_Z3 to true, otherwise false
 # Must be using java8
 
-if [[ "$#" -ge 1 ]] ; then
-    build_arg=`echo $1 | tr '[:upper:]' '[:lower:]'`;  # convert to lowercase
-    if [[ $build_arg == "y" ]] || [[ $build_arg == "yes" ]] ; then
-        echo "** Building package";
-        cd ..;
-        mvn package -Dmaven.test.skip=true ;
-        cd examples;
-        echo "** Package built";
-    fi
+BUILD=false;
+DEBUG_Z3="";
+
+# parse arguments following
+# https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -b|--build)
+            BUILD=true;
+            shift # past arg
+            ;;
+        -dz|--debugz3)
+           DEBUG_Z3=" -debugZ3";
+           shift
+           ;;
+   esac
+done
+
+
+if [[ $BUILD = true ]] ; then
+    echo "** Building package";
+    cd ..;
+    mvn package -Dmaven.test.skip=true ;
+    cd examples;
+    echo "** Package built";
 fi
 
 # one of "trace" "debug" "info" "warn" "error" "off"
@@ -34,18 +52,19 @@ if [ ! -d "${BUILD_DIR}" ]; then
     mkdir "${BUILD_DIR}";
 fi
 
-echo "** Building examples from ${SOURCE_DIR} into ${BUILD_DIR}";
+echo "** Building examples and common.aux from ${SOURCE_DIR} into ${BUILD_DIR}";
 find ${SOURCE_DIR} -type f -name "*.java" | xargs javac -d ${BUILD_DIR};
 echo "** Done building"; echo;
 
 # Run Ranjit's algorithm on test dirs
-for targetFile in `find ${SOURCE_DIR} -type f -name "targets.txt"`; do 
+for targetFile in `find ${SOURCE_DIR} -type f -name "targets.txt" -not -wholename "${SOURCE_DIR}/common/*"`; do 
     CLASS_NAME=`cat ${targetFile}`;
     echo "** Running Ranjit's algorithm on ${CLASS_NAME}";
     # Assume ${JAVA_HOME} is set up correctly for this to work
     LD_LIBRARY_PATH="${PATH_TO_Z3}" \
         java -Dorg.slf4j.simpleLogger.defaultLogLevel=${LOG_LEVEL} \
              -Djava.library.path="${PATH_TO_Z3}" \
-             -jar "${JAR}" ${targetFile} -- -d ${OUT_DIR} -f jimple -cp ${JIMPLE_CP} -pp;
+             -jar "${JAR}" ${targetFile} ${DEBUG_Z3} \
+                           -- -d ${OUT_DIR} -f jimple -cp ${JIMPLE_CP} -pp;
     echo "** Jimple file in directory ${OUT_DIR}"; echo
 done
