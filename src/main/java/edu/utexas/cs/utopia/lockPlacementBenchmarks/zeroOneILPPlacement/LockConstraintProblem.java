@@ -25,7 +25,7 @@ import soot.jimple.ArrayRef;
  *   - scope constraints of lvalues to atomic segments
  *   - AccessedBefore relation of lvalues to lvalues
  *   - Alias analysis
- *   - A cost function for global and local locks
+ *   - A cost function for global and local locks 
  * 
  * Minimize lock conflict & number of locks (see Ranjit paper
  * https://dl.acm.org/doi/pdf/10.1145/1190215.1190260
@@ -64,8 +64,7 @@ public class LockConstraintProblem {
 								 PointerAnalysis ptrAnalysis,
 								 int localCost,
 								 int globalCost,
-								 boolean logZ3) {
-		
+								 boolean logZ3) {		
 		// give each lValue an index
 		for(LValueBox lvb : lValues) {
 			lValIndex.put(lvb, lValIndex.size());
@@ -267,24 +266,22 @@ public class LockConstraintProblem {
 			seen.add(lvb1);
 			for(LValueBox lvb2 : lValues) {
 				if(seen.contains(lvb2)) continue;
+				int i1, i2;
 				switch(ptrAnalysis.getAliasRelation(lvb1, lvb2)) {
 				case MUST_ALIAS:
-				{
 					// must be assigned same locks
-					int i1 = lValIndex.get(lvb1),
-						i2 = lValIndex.get(lvb2);
+					i1 = lValIndex.get(lvb1);
+					i2 = lValIndex.get(lvb2);
 					for(int j = 0; j < lValIndex.size(); ++j) {
 						BoolExpr sameLoc = ctx.mkIff(localLockVars[i1][j], localLockVars[i2][j]);
 						BoolExpr sameGlob = ctx.mkIff(globalLockVars[i1][j], globalLockVars[i2][j]);
 						aliasConstraints = ctx.mkAnd(aliasConstraints, sameLoc, sameGlob);
 					}
 					break;
-				}
 				case MAY_ALIAS:
-				{
 					// must be assigned same global lock and no local lock
-					int i1 = lValIndex.get(lvb1),
-						i2 = lValIndex.get(lvb2);
+					i1 = lValIndex.get(lvb1);
+					i2 = lValIndex.get(lvb2);
 					for(int j = 0; j < lValIndex.size(); ++j) {
 						BoolExpr notLoc = ctx.mkNot(localLockVars[i1][j]);
 						notLoc = ctx.mkAnd(ctx.mkNot(localLockVars[i2][j]));
@@ -292,7 +289,6 @@ public class LockConstraintProblem {
 						aliasConstraints = ctx.mkAnd(aliasConstraints, notLoc, sameGlob);
 					}
 					break;
-				}
 				default: break;
 				}
 			}

@@ -1,12 +1,9 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -18,25 +15,15 @@ import com.google.common.base.Objects;
 import soot.Body;
 import soot.BodyTransformer;
 import soot.Local;
-import soot.NullType;
-import soot.RefType;
 import soot.Scene;
 import soot.SootClass;
-import soot.SootField;
 import soot.SootFieldRef;
 import soot.SootMethod;
-import soot.SootMethodRef;
 import soot.Unit;
 import soot.Value;
 import soot.jimple.AssignStmt;
-import soot.jimple.InstanceFieldRef;
 import soot.jimple.InvokeExpr;
-import soot.jimple.InvokeStmt;
 import soot.jimple.Jimple;
-import soot.jimple.JimpleBody;
-import soot.jimple.SpecialInvokeExpr;
-import soot.jimple.StaticFieldRef;
-import soot.jimple.Stmt;
 
 /**
  * We assert any classes which are given a local lock

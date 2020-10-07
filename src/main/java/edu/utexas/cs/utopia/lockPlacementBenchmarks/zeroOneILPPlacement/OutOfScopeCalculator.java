@@ -4,15 +4,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 
 import soot.Body;
-import soot.BodyTransformer;
 import soot.Local;
 import soot.SootClass;
 import soot.SootMethod;
-import soot.Value;
 import soot.jimple.AbstractJimpleValueSwitch;
 import soot.jimple.ArrayRef;
 import soot.jimple.InstanceFieldRef;
@@ -23,8 +20,6 @@ import soot.jimple.ThisRef;
 import soot.jimple.toolkits.invoke.AccessManager;
 import soot.toolkits.graph.ExceptionalUnitGraph;
 import soot.toolkits.scalar.GuaranteedDefs;
-import soot.toolkits.scalar.LiveLocals;
-import soot.toolkits.scalar.SimpleLiveLocals;
 
 /**
  * Given bodies and their respective atomic segments,

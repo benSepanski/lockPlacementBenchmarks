@@ -19,8 +19,8 @@ import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.Accessed
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockConstraintProblem;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockInserter;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OptimisticPointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PessimisticPointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
 import soot.Modifier;
@@ -150,32 +150,29 @@ public class Driver
         
         // TODO : make this a command line option, actually do an analysis
         // Get pointer analysis
-        PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
+        //PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
+        PointerAnalysis ptrAnalysis = new PessimisticPointerAnalysis();
         int localCost = cmdLine.getLocalCost(),
         	globalCost = cmdLine.getGlobalCost();
         boolean logZ3 = cmdLine.getDebugZ3();
         
-        // Adding our transformers!
+        // Add and apply our transformers!
         Pack jtpPack = packManager.getPack("jtp");     
-        log.debug("Adding custom soot transforms");
-   
-        // Used to get the atomic segments
-        AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker();
-        Transform atomicExtractorT = new Transform("jtp.atomicSegmentMarker",
-        										   atomicExtractor);
-        jtpPack.add(atomicExtractorT);
         
         log.info("Applying custom transforms");
         for(String className : cmdLine.getTargetClasses()) {
         	SootClass targetClass = Scene.v().getSootClass(className);
         	
-        	// Clear previous atomic segments
-        	atomicExtractor.getAtomicSegments().clear();
+            // Used to get the atomic segments
+            AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker();
+            Transform atomicExtractorT = new Transform("jtp.atomicSegmentMarker." + className,
+            										   atomicExtractor);
+            jtpPack.add(atomicExtractorT);
         	
         	// make sure targetClass has a clinit method
         	// https://ptolemy.berkeley.edu/ptolemyII/ptII10.0/ptII10.0.1/ptolemy/copernicus/kernel/SootUtilities.java
         	if(!targetClass.declaresMethodByName("<clinit>")) {
-        		@SuppressWarnings("rawtypes")
+        		@SuppressWarnings({ "rawtypes", "unchecked" })
 				SootMethod emptyClinit = new SootMethod("<clinit>",
 		        										new LinkedList(),
 		        										NullType.v(),
@@ -226,7 +223,7 @@ public class Driver
             										   atomicExtractor.getAtomicSegments(),
             										   lValueExtractor.getLValuesAccessedIn(),
             										   accBefore.getTopoAccessedBefore());
-            Transform lockInsertT = new Transform("jtp.lockInsertion" + targetClass.getName(),
+            Transform lockInsertT = new Transform("jtp.lockInsertion." + targetClass.getName(),
             									  lockInsert);
             jtpPack.add(lockInsertT);
             for(SootMethod targetMethod : targetClass.getMethods()) {

@@ -2,18 +2,13 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
 import java.util.HashSet;
 
-import com.google.common.base.Objects;
-
 import soot.AbstractValueBox;
 import soot.Local;
-import soot.Scene;
-import soot.SootClass;
 import soot.Value;
 import soot.ValueBox;
 import soot.jimple.AbstractJimpleValueSwitch;
 import soot.jimple.ArrayRef;
 import soot.jimple.InstanceFieldRef;
-import soot.jimple.Jimple;
 import soot.jimple.ParameterRef;
 import soot.jimple.StaticFieldRef;
 import soot.jimple.ThisRef;
@@ -27,7 +22,7 @@ import soot.jimple.ThisRef;
  * @author Ben_Sepanski
  *
  */
-class LValueBox extends AbstractValueBox {
+public class LValueBox extends AbstractValueBox {
 	/*** Generated Serializable ID */
 	private static final long serialVersionUID = -7383224985832701606L;
 	
@@ -84,19 +79,19 @@ class LValueBox extends AbstractValueBox {
 	}
 	
 	/**
-	 * Test equality by testing values
+	 * Test equality by equivalence of values
 	 */
 	@Override public boolean equals(Object other) {
 		if(this == other) return true;
 		if(!(other instanceof LValueBox)) return false;
 		LValueBox that = (LValueBox) other;
-		return Objects.equal(this.getValue(), that.getValue());
+		return this.getValue().equivTo(that.getValue());
 	}
 	/**
-	 * Hash by the value
+	 * Hash by equivalence of values
 	 */
 	@Override public int hashCode() {
-		return this.getValue().hashCode();
+		return this.getValue().equivHashCode();
 	}
 	
 	/**
