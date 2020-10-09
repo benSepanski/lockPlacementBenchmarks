@@ -6,23 +6,23 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.microsoft.z3.Context;
 
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AccessedBeforeRelation;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.AtomicSegmentMarker;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockConstraintProblem;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockInserter;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.OutOfScopeCalculator;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PessimisticPointerAnalysis;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PointerAnalysis;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.SharedLValuesExtractor;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.MonitorAnalysis;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.AtomicSegmentMarker;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.ClinitGuarantor;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.LockInserter;
 import soot.Modifier;
 import soot.NullType;
 import soot.Pack;
@@ -151,78 +151,51 @@ public class Driver
         // TODO : make this a command line option, actually do an analysis
         // Get pointer analysis
         //PointerAnalysis ptrAnalysis = new OptimisticPointerAnalysis();
-        PointerAnalysis ptrAnalysis = new PessimisticPointerAnalysis();
+        PessimisticPointerAnalysis ptrAnalysis = new PessimisticPointerAnalysis();
         int localCost = cmdLine.getLocalCost(),
         	globalCost = cmdLine.getGlobalCost();
         boolean logZ3 = cmdLine.getDebugZ3();
+        
+        log.info("Performing analyses");
+        List<MonitorAnalysis> monitorAnalyses = new ArrayList<>();
+        List<LockConstraintProblem> lockProblems = new ArrayList<>();
+        for(String className : cmdLine.getTargetClasses()) {
+        	SootClass targetClass = Scene.v().getSootClass(className);
+        	MonitorAnalysis mtrAnalysis = new MonitorAnalysis(targetClass, ptrAnalysis);
+        	Context ctx = new Context();
+        	LockConstraintProblem lockPrb = new LockConstraintProblem(ctx, mtrAnalysis, localCost, globalCost, logZ3);
+        	monitorAnalyses.add(mtrAnalysis);
+        	lockProblems.add(lockPrb);
+        }
         
         // Add and apply our transformers!
         Pack jtpPack = packManager.getPack("jtp");     
         
         log.info("Applying custom transforms");
-        for(String className : cmdLine.getTargetClasses()) {
+        ClinitGuarantor clinitGtr = new ClinitGuarantor();
+        for(int i = 0; i < cmdLine.getTargetClasses().size(); ++i) {
+        	String className = cmdLine.getTargetClasses().get(i);
         	SootClass targetClass = Scene.v().getSootClass(className);
         	
-            // Used to get the atomic segments
-            AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker();
+        	// get our analysis
+        	MonitorAnalysis mtrAnalysis = monitorAnalyses.get(i);
+        	LockConstraintProblem lockProb = lockProblems.get(i);
+        	
+        	// make sure we have a clinit
+        	clinitGtr.guaranteeClinitExists(targetClass);
+        	
+            // Mark the atomic segments
+        	log.debug("Marking atomic segments");
+            AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker(mtrAnalysis.getAtomicSegments());
             Transform atomicExtractorT = new Transform("jtp.atomicSegmentMarker." + className,
             										   atomicExtractor);
             jtpPack.add(atomicExtractorT);
         	
-        	// make sure targetClass has a clinit method
-        	// https://ptolemy.berkeley.edu/ptolemyII/ptII10.0/ptII10.0.1/ptolemy/copernicus/kernel/SootUtilities.java
-        	if(!targetClass.declaresMethodByName("<clinit>")) {
-        		@SuppressWarnings({ "rawtypes", "unchecked" })
-				SootMethod emptyClinit = new SootMethod("<clinit>",
-		        										new LinkedList(),
-		        										NullType.v(),
-		        										Modifier.PUBLIC);
-        		emptyClinit.setActiveBody(Jimple.v().newBody(emptyClinit));
-        		targetClass.addMethod(emptyClinit);
-        	}
-            // Extract atomic segments from methods
-        	log.debug("Extracting atomic segments from " + className);
-        	for(SootMethod targetMethod : targetClass.getMethods()) {
-        		atomicExtractorT.apply(targetMethod.getActiveBody());
-        	}
         	
-        	// Now get the shared lvalues
-        	log.debug("Extracting shared LValues from " + className);
-        	SharedLValuesExtractor lValueExtractor = 
-                new SharedLValuesExtractor(atomicExtractor.getAtomicSegments());
-        	
-        	// Now get the scope
-        	log.debug("Determining scope of shared LValues for each atomic segment");
-        	OutOfScopeCalculator scopeCalc = 
-        		new OutOfScopeCalculator(atomicExtractor.getAtomicSegments(),
-        								 lValueExtractor.getSharedLValues());
-
-        	// Compute the accessed-before relation 
-        	log.debug("extracting accessed before relation");
-        	AccessedBeforeRelation 
-        		accBefore = new AccessedBeforeRelation(ptrAnalysis,
-        											   targetClass,
-        											   lValueExtractor.getSharedLValues());
-        	
-        	// Build and solve our constraints
-        	log.debug("Building and solving lock constraint problem");
-        	LockConstraintProblem 
-        		lockProblem = new LockConstraintProblem(new Context(),
-									  					lValueExtractor.getSharedLValues(),
-														lValueExtractor.getLValuesAccessedIn(),
-														scopeCalc.getOutOfScope(),
-														accBefore.getTopoAccessedBefore(),
-														ptrAnalysis,
-														localCost,
-														globalCost,
-														logZ3);
-        	
-        	 // Used to insert locks
         	log.debug("Inserting locks!");
-            LockInserter lockInsert = new LockInserter(lockProblem.getLockAssignment(),
-            										   atomicExtractor.getAtomicSegments(),
-            										   lValueExtractor.getLValuesAccessedIn(),
-            										   accBefore.getTopoAccessedBefore());
+            LockInserter lockInsert = new LockInserter(lockProb.getLockAssignment(),
+            										   lockProb.getAssignedToGlobal(),
+            										   mtrAnalysis);
             Transform lockInsertT = new Transform("jtp.lockInsertion." + targetClass.getName(),
             									  lockInsert);
             jtpPack.add(lockInsertT);

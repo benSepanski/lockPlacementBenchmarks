@@ -1,4 +1,4 @@
-package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
+package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation;
 
 import java.util.Stack;
 import java.util.concurrent.locks.ReentrantLock;

@@ -1,5 +1,9 @@
 package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
 
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.AliasRelation;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.LValueBox;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.PointerAnalysis;
+
 /**
  * An optimistic pointer analysis which says
  * any two LValues MUST_ALIAS if they are the same

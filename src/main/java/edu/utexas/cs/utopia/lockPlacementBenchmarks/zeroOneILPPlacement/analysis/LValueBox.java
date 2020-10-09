@@ -1,11 +1,9 @@
-package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
-
-import java.util.HashSet;
+package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis;
 
 import soot.AbstractValueBox;
 import soot.Local;
+import soot.PrimType;
 import soot.Value;
-import soot.ValueBox;
 import soot.jimple.AbstractJimpleValueSwitch;
 import soot.jimple.ArrayRef;
 import soot.jimple.InstanceFieldRef;
@@ -15,17 +13,17 @@ import soot.jimple.ThisRef;
 
 /**
  * An LValue is one of the following:
- * 	- A Local (a JimpleLocal)
- *  - A field (an InstanceFieldRef, a ParameterRef, a ThisRef, or a StaticFieldRef)
+ * 	- A non-primitive Local (a JimpleLocal)
+ *  - A field (an InstanceFieldRef, or a StaticFieldRef)
+ *  - A ThisRef
+ *  - A non-primitive ParameterRef
  *  - An array reference (a JArrayRef)
  * 
  * @author Ben_Sepanski
  *
  */
-public class LValueBox extends AbstractValueBox {
-	/*** Generated Serializable ID */
-	private static final long serialVersionUID = -7383224985832701606L;
-	
+@SuppressWarnings("serial")
+public class LValueBox extends AbstractValueBox {	
 	/**
 	 * An anonymous class which can quickly test if a Value
 	 * is an LValue
@@ -38,13 +36,13 @@ public class LValueBox extends AbstractValueBox {
 			}
 			
 			@Override public void caseLocal(Local v) {
-				result = true;
+				result = !(v.getType() instanceof PrimType);
 			}
 			@Override public void caseInstanceFieldRef(InstanceFieldRef v) {
 				result = true;
 			}
 			@Override public void caseParameterRef(ParameterRef v) {
-				result = true;
+				result = !(v.getType() instanceof PrimType);
 			}
 			@Override public void caseStaticFieldRef(StaticFieldRef v) {
 				result = true;
@@ -59,7 +57,7 @@ public class LValueBox extends AbstractValueBox {
 				result = false;
 			}
 		};
-	
+
 	/**
 	 * 
 	 * @param v value to test
@@ -67,15 +65,8 @@ public class LValueBox extends AbstractValueBox {
 	 */
 	@Override
 	public boolean canContainValue(Value v) {
-		return LValueBox.isLValue(v);
-	}
-	
-	/**
-	 * Create LValueBox pointing to given Value
-	 * @param v
-	 */
-	public LValueBox(Value v) {
-		this.setValue(v);
+		v.apply(lValueTest);
+		return (Boolean) lValueTest.getResult();
 	}
 	
 	/**
@@ -92,36 +83,5 @@ public class LValueBox extends AbstractValueBox {
 	 */
 	@Override public int hashCode() {
 		return this.getValue().equivHashCode();
-	}
-	
-	/**
-	 * 
-	 * @param v value to test
-	 * @return True iff Value is an LValue
-	 */
-	protected static boolean isLValue(Value v) {
-		v.apply(lValueTest);
-		return (Boolean) lValueTest.getResult();
-	}
-	
-	/**
-	 * Extract all LValue s from the values pointed to by a list
-	 * of ValueBox
-	 * 
-	 * @param boxes the ValueBox'es to extract from
-	 * @return All the values pointed to
-	 *         by ValueBoxes in boxes.
-	 */
-	public static HashSet<LValueBox> getAllLValues(Iterable<ValueBox> boxes) {
-		HashSet<LValueBox> lVals = new HashSet<>();
-		HashSet<Value> addedValues = new HashSet<>();
-		for(ValueBox vb : boxes) {
-			Value val = vb.getValue();
-			if(LValueBox.isLValue(val) && !addedValues.contains(val)) {
-				lVals.add(new LValueBox(val));
-				addedValues.add(val);
-			}
-		}
-		return lVals;
 	}
 }

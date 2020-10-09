@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Based on edu.utexas.cs.utopia.cfpchecker.CmdLine by kferles
@@ -17,7 +18,7 @@ public class CmdLine
     private int globalCost = 2;
     private boolean debugZ3 = false;
 	private boolean isHelp = false;
-    private ArrayList<String> targetClasses = new ArrayList<String>();
+    private List<String> targetClasses = new ArrayList<String>();
     
     public String usage()
     {
@@ -86,7 +87,7 @@ public class CmdLine
         return parseError;
     }
     
-    public ArrayList<String> getTargetClasses() {
+    public List<String> getTargetClasses() {
     	return targetClasses;
     }
 

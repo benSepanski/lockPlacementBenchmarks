@@ -1,12 +1,10 @@
-package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
+package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis;
 
+import soot.Body;
 import soot.Unit;
 
 /**
- * Representation of an atomic segment inside a method.
- * 
- * Simply remembers the first and last unit, along with the
- * body. 
+ * Representation of an atomic segment inside a monitor
  * 
  * We assume the last unit, along with any return
  * statements inside the atomic segment, dominate the first unit.
@@ -16,12 +14,13 @@ import soot.Unit;
  * 
  * We assume the method is not static
  * 
- * Does no error checking.
+ * Performs minimal error checking.
  * 
  * @author Ben_Sepanski
  */
-class AtomicSegment {
-	private Unit firstUnit, lastUnit;
+public class AtomicSegment {
+	private final Body b;
+	private final Unit firstUnit, lastUnit;
 	
 	/**
 	 * 
@@ -33,15 +32,29 @@ class AtomicSegment {
 	 *        to be a unit in sootBody outside of any branch/loop
 	 *        statements.
 	 */
-	public AtomicSegment(Unit firstUnit, Unit lastUnit) {
+	public AtomicSegment(Body b, Unit firstUnit, Unit lastUnit) {
+		this.b = b;
 		this.firstUnit = firstUnit;
 		this.lastUnit = lastUnit;
 	}
 
+	/**
+	 * @return the body
+	 */
+	public Body getBody() {
+		return b;
+	}
+
+	/**
+	 * @return the firstUnit
+	 */
 	public Unit getFirstUnit() {
 		return firstUnit;
 	}
-	
+
+	/**
+	 * @return the lastUnit
+	 */
 	public Unit getLastUnit() {
 		return lastUnit;
 	}

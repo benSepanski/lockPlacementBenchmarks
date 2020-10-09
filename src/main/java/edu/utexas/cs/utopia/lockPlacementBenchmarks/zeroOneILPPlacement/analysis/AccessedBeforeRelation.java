@@ -1,8 +1,9 @@
-package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
+package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -11,8 +12,7 @@ import java.util.Stack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import soot.SootClass;
-import soot.SootMethod;
+import soot.Body;
 
 /**
  * Builds an accessed before relation.
@@ -38,66 +38,93 @@ import soot.SootMethod;
  * @author Ben_Sepanski
  *
  */
-public class AccessedBeforeRelation {
+class AccessedBeforeRelation {
 	private static Logger log = LoggerFactory.getLogger(AccessedBeforeRelation.class);
-	private HashMap<LValueBox, HashSet<LValueBox>> topoAccessedBefore;
+	private List<List<Integer>> topoAccessedBefore;
 	
 	/**
 	 * Get a map from each LValueBox v to {w | v TopoAccessedBefore w}
 	 * @return
 	 */
-	public HashMap<LValueBox, HashSet<LValueBox>> getTopoAccessedBefore() {
+	public List<List<Integer>> getTopoAccessedBefore() {
 		return topoAccessedBefore;
 	}
 	
 	public AccessedBeforeRelation(PointerAnalysis ptrAnalysis,
-			  					  SootClass cls,
-								  HashSet<LValueBox> sharedLValues) {
-		// Initialize graph with no edges
-		Map<LValueBox, Set<LValueBox>> edgeList = new HashMap<>();
-		for(LValueBox lvb : sharedLValues) {
-			edgeList.put(lvb,  new HashSet<LValueBox>());
+							      List<AtomicSegment> atomicSegments,
+							      List<List<Integer>> lValuesAccessedIn,
+							      List<LValueBox> lValues) {
+		// Initialize access graph with no edges
+		Map<Integer, Set<Integer>> edgeList = new HashMap<>();
+		for(int i = 0; i < lValues.size(); ++i) {
+			edgeList.put(i,  new HashSet<Integer>());
 		}
+		
+		/// loop over all atomic segments and compute on all bodies found /////
 		log.debug("Building access graph from atomic segments in class methods");
-		// Add edges from all method bodies
+		// used to  sure we don't compute on a body more than once
+		Set<Body> accessedBeforeOnBodyComputed = new HashSet<>();  
 		AccessedBeforeRelationOnBody accOnBody;
-		for(SootMethod mthd : cls.getMethods()) {
-			accOnBody = new AccessedBeforeRelationOnBody(ptrAnalysis, mthd.getActiveBody(), sharedLValues);
-			for(Entry<LValueBox, HashSet<LValueBox>> edges : accOnBody.getAccessedBefore().entrySet()) {
-				LValueBox from = edges.getKey();
-				for(LValueBox to : edges.getValue()) {
-					edgeList.get(from).add(to);
-				}
+
+		for(AtomicSegment atSeg : atomicSegments) {
+			Body b = atSeg.getBody();
+			if(accessedBeforeOnBodyComputed.contains(b)) continue;
+			else accessedBeforeOnBodyComputed.add(b);
+			
+			accOnBody = new AccessedBeforeRelationOnBody(b,
+												 ptrAnalysis,
+											     atomicSegments,
+											     lValuesAccessedIn,
+											     lValues);
+			Map<Integer, Set<Integer>> accBefore = accOnBody.getAccessedBefore();
+			// add edges (id of v) -> (id of w) iff v accessed-Before w
+			for(Entry<Integer, Set<Integer>> edges : accBefore.entrySet()) {
+				edgeList.get(edges.getKey()).addAll(edges.getValue());
 			}
 		}
+		///////////////////////////////////////////////////////////////////////
+		
+		/// Compute topo accessed before relation /////////////////////////////
 		log.debug("Computing SCCs and topo sort of access graph");
-		TarjanAlgorithm<LValueBox> tarjans = new TarjanAlgorithm<LValueBox>(edgeList);
-		ArrayList<HashSet<LValueBox>> reverseTopoSCCs = tarjans.getReverseTopoSCCs();
+		TarjanAlgorithm<Integer> tarjans = new TarjanAlgorithm<Integer>(edgeList);
+		List<Set<Integer>> reverseTopoSCCs = tarjans.getReverseTopoSCCs();
 		
 		log.debug("Building accessedBefore relation from SCCs");
-		topoAccessedBefore = new HashMap<LValueBox, HashSet<LValueBox>>();
-		for(HashSet<LValueBox> scc : reverseTopoSCCs) {
-			HashSet<LValueBox> descendants = new HashSet<LValueBox>();
-			// If a non-trivial scc
+		// initialize topoAccessedBefore to an empty graph
+		topoAccessedBefore = new ArrayList<>();
+		for(int i = 0; i < lValues.size(); ++i) {
+			topoAccessedBefore.add(new ArrayList<Integer>());
+		}
+		// We're going in reverse topo order, so at first there
+		// are no sccs later in the topo sort
+		List<Integer> descendants = new ArrayList<>();
+		
+		for(Set<Integer> scc : reverseTopoSCCs) {
+			// Add this scc to the descendants
+			descendants.addAll(scc);
+			// If a non-trivial scc, need to add descendants
+			// into topoAccessedBefore relation
 			if(scc.size() > 1) {
-				// add the scc
-				descendants.addAll(scc);
-				//all the sccs after this scc (in the toposort)
-				descendants.addAll(topoAccessedBefore.keySet());	
-			}
-			// point lvalues to descendants
-			for(LValueBox lvb : scc) {
-				topoAccessedBefore.put(lvb, descendants);
+				for(int lValueID : scc) {
+					topoAccessedBefore.get(lValueID).addAll(descendants);
+				}	
 			}
 		}
+		///////////////////////////////////////////////////////////////////////
 	}
 }
 
+/**
+ * Just an implementation of Tarjan's algorithm....
+ * @author Ben_Sepanski
+ *
+ * @param <N> node class
+ */
 class TarjanAlgorithm<N> {
-	private ArrayList<HashSet<N>> reverseTopoSCCs = new ArrayList<>();
+	private List<Set<N>> reverseTopoSCCs = new ArrayList<>();
 	private HashMap<N, Integer> discoveryIndex = new HashMap<>(),
 		leastDescendant = new HashMap<>();
-	private HashSet<N> onStack = new HashSet<>();
+	private Set<N> onStack = new HashSet<>();
 	private Stack<N> sccBeingDetermined = new Stack<>();
 	private Map<N, Set<N>> edgeList;
 	
@@ -156,7 +183,7 @@ class TarjanAlgorithm<N> {
 	 * Get the SCCs of the graph in reverse topological order
 	 * @return 
 	 */
-	public ArrayList<HashSet<N>> getReverseTopoSCCs() {
+	public List<Set<N>> getReverseTopoSCCs() {
 		return this.reverseTopoSCCs;
 	}
 }

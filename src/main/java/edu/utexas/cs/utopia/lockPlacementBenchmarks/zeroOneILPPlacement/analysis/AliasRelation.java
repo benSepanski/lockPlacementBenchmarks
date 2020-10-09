@@ -1,4 +1,4 @@
-package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
+package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis;
 
 /**
  * Two LValues (a variable or a field) are MUST_ALIAS'ed
@@ -18,7 +18,7 @@ package edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement;
  * @author Ben_Sepanski
  *
  */
-enum AliasRelation {
+public enum AliasRelation {
 	MAY_ALIAS,
 	MUST_ALIAS,
 	NOT_ALIAS
