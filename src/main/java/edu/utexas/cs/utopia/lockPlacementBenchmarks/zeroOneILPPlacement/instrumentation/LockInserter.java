@@ -222,6 +222,8 @@ public class LockInserter extends BodyTransformer {
 	 * in localLockVar, then have localLockManager obtain that
 	 * lock.
 	 * 
+	 * global locks use the thislocal
+	 * 
 	 * @param b the body
 	 * @param unitBefore the unit to insert lock obtains before
 	 * @param localLockManager the local holding a 2-phase lock manager
@@ -240,7 +242,8 @@ public class LockInserter extends BodyTransformer {
 		SootFieldRef lockFieldRef = this.createOrGetLockField(cls, lockID, global).makeRef();
 		Value lockVal;
 		if(global) {
-			lockVal = Jimple.v().newStaticFieldRef(lockFieldRef);
+			lockVal = Jimple.v().newInstanceFieldRef(b.getThisLocal(),
+												     lockFieldRef);
 		}
 		else {
 			lockVal = Jimple.v().newInstanceFieldRef(this.lValues.get(lockID).getValue(),

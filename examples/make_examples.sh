@@ -26,9 +26,9 @@ done
 
 
 if [[ $BUILD = true ]] ; then
-    echo "** Building package";
+    echo "** clean installing package ";
     cd ..;
-    mvn package -Dmaven.test.skip=true ;
+    mvn clean install -Dmaven.test.skip=true ;
     cd examples;
     echo "** Package built";
 fi

@@ -6,6 +6,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.AtomicSegment;
 import soot.Body;
 import soot.BodyTransformer;
@@ -25,6 +28,7 @@ import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
 import soot.jimple.NewExpr;
 import soot.jimple.ReturnStmt;
+import soot.jimple.ReturnVoidStmt;
 import soot.jimple.SpecialInvokeExpr;
 import soot.jimple.StaticFieldRef;
 
@@ -43,6 +47,8 @@ import soot.jimple.StaticFieldRef;
  * @author Ben_Sepanski
  */
 public class AtomicSegmentMarker extends BodyTransformer {
+	private static Logger log = LoggerFactory.getLogger(AtomicSegmentMarker.class);
+	
 	// The name of the field which will hold the lock manager
 	private static final String lockManagerName = "$2phaseLockMngr";
 	// Each method with atomic segments makes a local which is a reference
@@ -88,6 +94,7 @@ public class AtomicSegmentMarker extends BodyTransformer {
 
 	@Override
     protected void internalTransform(Body body, String phaseName, Map<String, String> phaseOptions) {
+		log.debug("Marking atomic segments (if any) in " + body.getMethod().getName());
 		/// If a static constructor, add code to         //////////////////////
 		/// initialize this.<lockManagerName> and return //////////////////////
 		JimpleBody jimpBody = (JimpleBody) body;
@@ -165,10 +172,10 @@ public class AtomicSegmentMarker extends BodyTransformer {
 				Unit atUnit = atUnitIter.next();
 				boolean isLast = atUnit.equals(last);
 				
-				if(atUnit instanceof ReturnStmt) {
+				if(atUnit instanceof ReturnStmt || atUnit instanceof ReturnVoidStmt) {
 					units.insertBefore(getNewExitAtomicStmt(lockManagerLocal), atUnit);
 				}
-				else if(isLast) {
+				else if (isLast) {
 					units.insertAfter(getNewExitAtomicStmt(lockManagerLocal), atUnit);
 				}
 				
@@ -181,8 +188,8 @@ public class AtomicSegmentMarker extends BodyTransformer {
 		// any atomic segments
 		if(hasAtomicSegment) {
 			jimpBody.getLocals().add(lockManagerLocal);
-			Unit lastNonIdentity = jimpBody.getFirstNonIdentityStmt();
-			units.insertBefore(lockManagerAssignmentToLocal, lastNonIdentity);
+			Unit firstNonIdentity = jimpBody.getFirstNonIdentityStmt();
+			units.insertBefore(lockManagerAssignmentToLocal, firstNonIdentity);
 		}
 	}
 	

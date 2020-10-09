@@ -60,6 +60,7 @@ class LValueExtractor {
 					lVal.setValue(vb.getValue());
 					id = getOrMakeID(lVal);
 					lValueIDs.add(id);
+					lVal = new LValueBox();
 				}
 			}
 		}

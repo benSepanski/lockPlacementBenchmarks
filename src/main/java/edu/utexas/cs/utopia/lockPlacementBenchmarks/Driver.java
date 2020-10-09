@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -23,8 +22,7 @@ import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.AtomicSegmentMarker;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.ClinitGuarantor;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.LockInserter;
-import soot.Modifier;
-import soot.NullType;
+import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.TwoPhaseLockManager;
 import soot.Pack;
 import soot.PackManager;
 import soot.Printer;
@@ -34,7 +32,6 @@ import soot.SootMethod;
 import soot.SourceLocator;
 import soot.Transform;
 import soot.jimple.JasminClass;
-import soot.jimple.Jimple;
 import soot.options.Options;
 import soot.util.JasminOutputStream;
 
@@ -130,8 +127,7 @@ public class Driver
         //
         // We are loading at the BODIES level because we may need to modify
         // classes to insert locks...
-        Scene.v().addBasicClass("edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.TwoPhaseLockManager",
-        					SootClass.BODIES);
+        Scene.v().addBasicClass(TwoPhaseLockManager.class.getName(), SootClass.BODIES);
         // We need these because we're working with explicit monitors
         Scene.v().addBasicClass("java.util.concurrent.locks.ReentrantLock", SootClass.BODIES);
         Scene.v().addBasicClass("java.util.concurrent.locks.Condition", SootClass.BODIES);
@@ -186,11 +182,13 @@ public class Driver
         	
             // Mark the atomic segments
         	log.debug("Marking atomic segments");
-            AtomicSegmentMarker atomicExtractor = new AtomicSegmentMarker(mtrAnalysis.getAtomicSegments());
-            Transform atomicExtractorT = new Transform("jtp.atomicSegmentMarker." + className,
-            										   atomicExtractor);
-            jtpPack.add(atomicExtractorT);
-        	
+            AtomicSegmentMarker atomicMarker = new AtomicSegmentMarker(mtrAnalysis.getAtomicSegments());
+            Transform atomicMarkerT = new Transform("jtp.atomicSegmentMarker." + className,
+            										   atomicMarker);
+            jtpPack.add(atomicMarkerT);
+            for(SootMethod targetMethod : targetClass.getMethods()) {
+        		atomicMarkerT.apply(targetMethod.getActiveBody());
+        	}
         	
         	log.debug("Inserting locks!");
             LockInserter lockInsert = new LockInserter(lockProb.getLockAssignment(),

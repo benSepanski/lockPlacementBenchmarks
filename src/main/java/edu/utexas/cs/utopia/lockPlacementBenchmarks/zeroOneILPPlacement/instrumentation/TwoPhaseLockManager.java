@@ -17,7 +17,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Note that we rely on the user to avoid deadlock by obtaining
  * locks in a safe order.
  */
-class TwoPhaseLockManager {
+public class TwoPhaseLockManager {
 	// A thread local stack of locks, initializing to empty stack
 	private ThreadLocal<Stack<ReentrantLock>> 
 		obtainedLocks = new ThreadLocal<Stack<ReentrantLock>>() {
