@@ -20,7 +20,6 @@ import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.LockCons
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.PessimisticPointerAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.analysis.MonitorAnalysis;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.AtomicSegmentMarker;
-import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.ClinitGuarantor;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.LockInserter;
 import edu.utexas.cs.utopia.lockPlacementBenchmarks.zeroOneILPPlacement.instrumentation.TwoPhaseLockManager;
 import soot.Pack;
@@ -168,7 +167,6 @@ public class Driver
         Pack jtpPack = packManager.getPack("jtp");     
         
         log.info("Applying custom transforms");
-        ClinitGuarantor clinitGtr = new ClinitGuarantor();
         for(int i = 0; i < cmdLine.getTargetClasses().size(); ++i) {
         	String className = cmdLine.getTargetClasses().get(i);
         	SootClass targetClass = Scene.v().getSootClass(className);
@@ -176,9 +174,6 @@ public class Driver
         	// get our analysis
         	MonitorAnalysis mtrAnalysis = monitorAnalyses.get(i);
         	LockConstraintProblem lockProb = lockProblems.get(i);
-        	
-        	// make sure we have a clinit
-        	clinitGtr.guaranteeClinitExists(targetClass);
         	
             // Mark the atomic segments
         	log.debug("Marking atomic segments");
